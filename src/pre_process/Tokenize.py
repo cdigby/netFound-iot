@@ -36,6 +36,9 @@ INTERNAL_IPS = ["127.0.0.1/8"]
 TOKEN_BYTES_LENGTH = 2
 TCP_OPTIONS = False
 
+## Reserved label names
+FILENAME_SUBSTITUTION = "RESERVED_FILENAME"
+
 
 def get_protocol(file_name: str) -> Optional[Protocol]:
     try:
@@ -489,7 +492,15 @@ if __name__ == "__main__":
     else:
         output_dir = config["output_dir"]
 
-    args = [(join(input_dir, file), script_args.label) for file in os.listdir(input_dir)]
+    args = [
+        (
+            join(input_dir, file),
+            script_args.label if script_args.label != FILENAME_SUBSTITUTION else join(input_dir, file),
+        ) 
+        for file 
+        in os.listdir(input_dir)
+    ]
+    
     # validation for tcp options
     tcpoptions_pattern = f"tcpoptions.{Protocol.TCP.value}"
     if TCP_OPTIONS:
