@@ -929,7 +929,6 @@ class NetfoundFinetuningModel(NetFoundPretrainedModel):
             if self.config.problem_type == "regression":
                 loss_fct = L1Loss()
                 if self.num_labels == 1:
-                    logits = self.relu(logits)
                     loss = loss_fct(logits.squeeze(), (labels.squeeze().to(torch.float32)))
                 else:
                     loss = loss_fct(logits, labels)
