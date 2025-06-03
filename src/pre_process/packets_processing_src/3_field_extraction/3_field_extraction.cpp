@@ -48,6 +48,7 @@ int process_file(const std::string input_file, const std::string output_file, bo
     }
     if (!reader->open()) {
         std::cerr << "Error opening input pcap file: " << input_file << std::endl;
+        delete reader;
         return 1;
     }
 
@@ -79,6 +80,10 @@ int process_file(const std::string input_file, const std::string output_file, bo
             ipv6Layer = parsedPacket.getLayerOfType<pcpp::IPv6Layer>();
             if (ipv6Layer == nullptr) {
                 std::cerr << "File " << input_file << " contains packets with unknown network layer protocol: " << std::to_string(ipversion) << std::endl;
+                if (outputFileStream.is_open()) {
+                    outputFileStream.close();
+                }
+                delete reader;
                 return 1;
             }
         }
@@ -105,6 +110,8 @@ int process_file(const std::string input_file, const std::string output_file, bo
             outputFileStream.open(outputFilename, std::ios::binary | std::ios::out);
             if (!outputFileStream.is_open()) {
                 std::cerr << "Error opening output file: " << outputFilename << std::endl;
+                reader->close();
+                delete reader;
                 return 1;
             }
 
@@ -115,6 +122,9 @@ int process_file(const std::string input_file, const std::string output_file, bo
             std::cerr << "File " << input_file << " contains packets with different protocols. " <<
                       "Protocol of the first packet: " << std::to_string(global_protocol) << ", current packet number: " << packetCount <<
                       ", current protocol: " << std::to_string(protocol) << std::endl;
+            outputFileStream.close();
+            reader->close();
+            delete reader;
             return 1;
         }
 
@@ -210,6 +220,9 @@ int process_file(const std::string input_file, const std::string output_file, bo
             auto *tcpLayer = parsedPacket.getLayerOfType<pcpp::TcpLayer>();
             if (tcpLayer == nullptr) {
                 std::cerr << "File " << input_file << " contains packets with unknown transport layer protocol during TCP parsing: " << std::to_string(protocol) << std::endl;
+                outputFileStream.close();
+                reader->close();
+                delete reader;
                 return 1;
             }
 
@@ -299,6 +312,9 @@ int process_file(const std::string input_file, const std::string output_file, bo
             auto *udpLayer = parsedPacket.getLayerOfType<pcpp::UdpLayer>();
             if (udpLayer == nullptr) {
                 std::cerr << "File " << input_file << " contains packets with unknown transport layer protocol during UDP parsing: " << std::to_string(protocol) << std::endl;
+                outputFileStream.close();
+                reader->close();
+                delete reader;
                 return 1;
             }
 
@@ -324,6 +340,9 @@ int process_file(const std::string input_file, const std::string output_file, bo
             auto *icmpLayer = parsedPacket.getLayerOfType<pcpp::IcmpLayer>();
             if (icmpLayer == nullptr) {
                 std::cerr << "File " << input_file << " contains packets with unknown transport layer protocol during ICMP parsing: " << std::to_string(protocol) << std::endl;
+                outputFileStream.close();
+                reader->close();
+                delete reader;
                 return 1;
             }
             
@@ -345,6 +364,9 @@ int process_file(const std::string input_file, const std::string output_file, bo
             }
         } else {
             std::cerr << "File " << input_file << " contains packets with unknown transport layer protocol: " << std::to_string(protocol) << std::endl;
+            outputFileStream.close();
+            reader->close();
+            delete reader;
             return 1;
         }
 
@@ -363,6 +385,7 @@ int process_file(const std::string input_file, const std::string output_file, bo
 
     outputFileStream.close();
     reader->close();
+    delete reader;
 
     return 0;
 }
