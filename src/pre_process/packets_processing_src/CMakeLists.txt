@@ -8,6 +8,8 @@ find_package(PcapPlusPlus REQUIRED)
 
 
 add_executable(1_filter 1_filter/1_filter.cpp)
+add_executable(2_pcap_splitting 2_pcap_splitting/main.cpp)
 add_executable(3_field_extraction 3_field_extraction/3_field_extraction.cpp)
 target_link_libraries("1_filter" PUBLIC PcapPlusPlus::Pcap++)
+target_link_libraries("2_pcap_splitting" PUBLIC PcapPlusPlus::Pcap++)
 target_link_libraries("3_field_extraction" PUBLIC PcapPlusPlus::Pcap++)

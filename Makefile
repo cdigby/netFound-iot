@@ -17,6 +17,7 @@ compile:
 	cmake -S $(PREPROCESS_SRC_DIR) -B $(PREPROCESS_BUILD_DIR)
 	make -C $(PREPROCESS_BUILD_DIR)
 	cp $(PREPROCESS_BUILD_DIR)/1_filter src/pre_process/1_filter
+	cp $(PREPROCESS_BUILD_DIR)/2_pcap_splitting src/pre_process/2_pcap_splitting
 	cp $(PREPROCESS_BUILD_DIR)/3_field_extraction src/pre_process/3_field_extraction
 
 preprocess:
