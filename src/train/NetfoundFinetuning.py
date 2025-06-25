@@ -9,6 +9,7 @@ import torch.distributed
 import numpy as np
 import utils
 import random
+import sys
 from dataclasses import field, dataclass
 from datasets.distributed import split_dataset_by_node
 from typing import Optional
@@ -107,6 +108,8 @@ def classif_metrics(p: EvalPrediction, num_classes):
 
 @record
 def main():
+    np.set_printoptions(threshold=sys.maxsize) # Don't truncate confusion matrix if we have many classes
+
     parser = HfArgumentParser(
         (ModelArguments, FineTuningDataTrainingArguments, TrainingArguments)
     )
