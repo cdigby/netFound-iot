@@ -833,6 +833,119 @@ class AttentivePooling(nn.Module):
         attention_weights_normalized = torch.softmax(attention_weights, -1)
         return torch.sum(attention_weights_normalized.unsqueeze(-1) * inputs, 1)
 
+class NetfoundFinetuningModel(NetFoundPretrainedModel):
+    _keys_to_ignore_on_load_missing = [r"position_ids"]
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.num_labels = config.num_labels
+        self.config = config
+        self.model_max_length = config.model_max_length
+        self.max_burst_length = self.config.max_burst_length
+        self.base_transformer = NetFoundBase(config)
+        self.attentivePooling = AttentivePooling(config)
+        classifier_dropout = (
+            config.classifier_dropout
+            if config.classifier_dropout is not None
+            else config.hidden_dropout_prob
+        )
+        self.dropout = nn.Dropout(classifier_dropout)
+        self.hiddenLayer = nn.Linear(config.hidden_size, config.hidden_size)
+        self.hiddenLayer2 = nn.Linear(config.hidden_size, config.hidden_size)
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+        self.attentivePooling = AttentivePooling(config=config)
+        self.relu = nn.ReLU()
+
+        # Initialize weights and apply final processing
+        self.post_init()
+
+    def poolingByAttention(self, sequence_output, max_burst_length):
+        burstReps = sequence_output[:, ::max_burst_length, :].clone()
+        return self.attentivePooling(burstReps)
+
+    def forward(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        position_ids=None,
+        labels=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+        direction=None,
+        iats=None,
+        bytes=None,
+        pkt_count=None,
+        protocol=None,
+        stats=None,
+        flow_duration = None
+    ):
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+            Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
+            config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
+            `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
+        """
+        if labels is None:
+            labels = flow_duration / 1000.0
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
+
+        outputs = self.base_transformer(
+            input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+            direction=direction,
+            iats=iats,
+            bytes=bytes,
+            pkt_count=pkt_count,
+            protocol=protocol,
+        )
+
+        sequence_output = outputs[0]
+        pooled_output = poolingByAttention(
+            self.attentivePooling, sequence_output, self.config.max_burst_length
+        )
+        pooled_output = self.hiddenLayer2(self.hiddenLayer(pooled_output))
+        if stats is not None:
+            logits = self.classifier(torch.concatenate([pooled_output, stats], dim=-1))
+        else:
+            logits = self.classifier(torch.concatenate([pooled_output], dim=-1))
+
+        loss = None
+        if labels is not None:
+            if self.config.problem_type is None:
+                if self.num_labels == 1:
+                    self.config.problem_type = "regression"
+                elif self.num_labels > 1 and (
+                    labels.dtype == torch.long or labels.dtype == torch.int
+                ):
+                    self.config.problem_type = "single_label_classification"
+                else:
+                    self.config.problem_type = "multi_label_classification"
+
+            if self.config.problem_type == "regression":
+                loss_fct = L1Loss()
+                if self.num_labels == 1:
+                    loss = loss_fct(logits.squeeze(), (labels.squeeze().to(torch.float32)))
+                else:
+                    loss = loss_fct(logits, labels)
+            elif self.config.problem_type == "single_label_classification":
+                loss_fct = CrossEntropyLoss()
+                loss = loss_fct(logits.view(-1, self.num_labels), labels)
+
+        if not return_dict:
+            output = (logits,) + outputs[2:]
+            return ((loss,) + output) if loss is not None else output
+
+        return SequenceClassifierOutput(
+            loss=loss,
+            logits=logits,
+        )
 
 class RandomForestClassifierHead:
     def __init__(self, config):
@@ -857,8 +970,11 @@ class RandomForestClassifierHead:
         features_np = features.detach().cpu().numpy()
         return self.classifier.predict_proba(features_np)
 
+@dataclass
+class NetfoundFeatureExtractorOutput(SequenceClassifierOutput):
+    features: Optional[torch.Tensor] = None
 
-class NetfoundFinetuningModel(NetFoundPretrainedModel):
+class NetfoundFeatureExtractor(NetFoundPretrainedModel):
     _keys_to_ignore_on_load_missing = [r"position_ids"]
 
     def __init__(self, config):
@@ -880,9 +996,6 @@ class NetfoundFinetuningModel(NetFoundPretrainedModel):
         # self.classifier = nn.Linear(config.hidden_size, config.num_labels)
         # self.attentivePooling = AttentivePooling(config=config)
         # self.relu = nn.ReLU()
-
-        self.classifier_head = RandomForestClassifierHead(config)
-        self.training_mode = True # True if training, otherwise inference mode
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -924,7 +1037,6 @@ class NetfoundFinetuningModel(NetFoundPretrainedModel):
             return_dict if return_dict is not None else self.config.use_return_dict
         )
 
-
         outputs = self.base_transformer(
             input_ids,
             attention_mask=attention_mask,
@@ -943,54 +1055,34 @@ class NetfoundFinetuningModel(NetFoundPretrainedModel):
         pooled_output = poolingByAttention(
             self.attentivePooling, sequence_output, self.config.max_burst_length
         )
-        # pooled_output = self.hiddenLayer2(self.hiddenLayer(pooled_output))
+
         if stats is not None:
             features = torch.concatenate([pooled_output, stats], dim=-1)
         else:
             features = torch.concatenate([pooled_output], dim=-1)
 
-        loss = None
-        logits = None
+        # loss = None
+        # logits = None
 
         # Only care about classification problem for now... regression not implemented
-        if self.training_mode:
-            # Train random forest to fit the NetfoundBase outputs
-            # Base model must be frozen
-            self.classifier_head.fit(features, labels)
+        # if self.training_mode:
+        #     # Train random forest to fit the NetfoundBase outputs
+        #     # Base model must be frozen
+        #     self.classifier_head.fit(features, labels)
 
-        else:
-            # Do inference using random forest
-            predictions = self.classifier_head.predict_proba(features)
-            logits = torch.from_numpy(predictions).to(features.device)
-            
-        # if labels is not None:
-        #     if self.config.problem_type is None:
-        #         if self.num_labels == 1:
-        #             self.config.problem_type = "regression"
-        #         elif self.num_labels > 1 and (
-        #             labels.dtype == torch.long or labels.dtype == torch.int
-        #         ):
-        #             self.config.problem_type = "single_label_classification"
-        #         else:
-        #             self.config.problem_type = "multi_label_classification"
+        # else:
+        #     # Do inference using random forest
+        #     predictions = self.classifier_head.predict_proba(features)
+        #     logits = torch.from_numpy(predictions).to(features.device)    
 
-        #     if self.config.problem_type == "regression":
-        #         loss_fct = L1Loss()
-        #         if self.num_labels == 1:
-        #             loss = loss_fct(logits.squeeze(), (labels.squeeze().to(torch.float32)))
-        #         else:
-        #             loss = loss_fct(logits, labels)
-        #     elif self.config.problem_type == "single_label_classification":
-        #         loss_fct = CrossEntropyLoss()
-        #         loss = loss_fct(logits.view(-1, self.num_labels), labels)
+        # if not return_dict:
+        #     output = (logits,) + outputs[2:]
+        #     return ((loss,) + output) if loss is not None else output
 
-        if not return_dict:
-            output = (logits,) + outputs[2:]
-            return ((loss,) + output) if loss is not None else output
-
-        return SequenceClassifierOutput(
-            loss=loss,
-            logits=logits,
+        return NetfoundFeatureExtractorOutput(
+            loss=None,
+            logits=None,
+            features=features
         )
 
 

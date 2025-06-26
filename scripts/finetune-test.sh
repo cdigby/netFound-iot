@@ -32,12 +32,11 @@ python \
     src/train/NetfoundFinetuning.py \
     --train_dir /mnt/extra/processed/iot2023/iot2023-8class-big-benign \
     --model_name_or_path /mnt/extra/models/netFound-640M-base \
-    --output_dir /mnt/extra/models/iot2023-rf \
+    --output_dir /mnt/extra/models/iot2023-hr \
     --report_to tensorboard \
     --overwrite_output_dir \
     --save_safetensors false \
-    --do_train \
-    --do_eval \
+    --do_feature_extraction \
     --eval_strategy epoch \
     --save_strategy epoch \
     --learning_rate 0.0002 \

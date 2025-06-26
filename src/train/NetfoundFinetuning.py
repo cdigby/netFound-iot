@@ -34,7 +34,7 @@ from sklearn.metrics import (
 )
 
 from NetFoundDataCollator import DataCollatorForFlowClassification
-from NetFoundModels import NetfoundFinetuningModel, NetfoundNoPTM
+from NetFoundModels import NetfoundFinetuningModel, NetfoundNoPTM, NetfoundFeatureExtractor
 from NetFoundTrainer import NetfoundTrainer
 from NetfoundConfig import NetfoundConfig, NetFoundTCPOptionsConfig, NetFoundLarge
 from NetfoundTokenizer import NetFoundTokenizer
@@ -71,6 +71,10 @@ class FineTuningDataTrainingArguments(CommonDataTrainingArguments):
         metadata={
             "help": "Use the large configuration for netFound model"
         },
+    )
+    do_feature_extraction: bool = field(
+        default=False,
+        metadata={"help": "Whether to do feature extraction."},
     )
 
 
@@ -170,17 +174,32 @@ def main():
         torch.distributed.barrier()
 
     data_collator = DataCollatorForFlowClassification(config.max_burst_length)
+    # if model_args.model_name_or_path is not None and os.path.exists(
+    #         model_args.model_name_or_path
+    # ):
+    #     logger.warning(f"Using weights from {model_args.model_name_or_path}")
+    #     model = freeze(NetfoundFinetuningModel.from_pretrained(
+    #         model_args.model_name_or_path, config=config
+    #     ), model_args)
+    # elif model_args.no_ptm:
+    #     model = NetfoundNoPTM(config=config)
+    # else:
+    #     model = freeze(NetfoundFinetuningModel(config=config), model_args)
+    # if training_args.local_rank == 0:
+    #     summary(model)
+
+    ### CHANGE TO USE NETFOUND FEATURE EXTRACTOR
     if model_args.model_name_or_path is not None and os.path.exists(
             model_args.model_name_or_path
     ):
         logger.warning(f"Using weights from {model_args.model_name_or_path}")
-        model = freeze(NetfoundFinetuningModel.from_pretrained(
+        model = freeze(NetfoundFeatureExtractor.from_pretrained(
             model_args.model_name_or_path, config=config
         ), model_args)
     elif model_args.no_ptm:
         model = NetfoundNoPTM(config=config)
     else:
-        model = freeze(NetfoundFinetuningModel(config=config), model_args)
+        model = freeze(NetfoundFeatureExtractor(config=config), model_args)
     if training_args.local_rank == 0:
         summary(model)
 
@@ -209,78 +228,21 @@ def main():
 
     verify_checkpoint(logger, training_args)
 
-    # if training_args.do_train:
-    #     logger.warning("*** Train ***")
-    #     train_result = trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
-    #     trainer.save_model()  # doesn't store tokenizer
-    #     metrics = train_result.metrics
+    # train_dataloader = trainer.get_train_dataloader()
 
-    #     trainer.log_metrics("train", metrics)
-    #     trainer.save_metrics("train", metrics)
-    #     trainer.save_state()
+    if data_args.do_feature_extraction:
+        logger.warning("*** 1 Use netfound as feature extractor ***")
 
-    # if training_args.do_eval:
-    #     logger.warning("*** Evaluate ***")
-    #     metrics = trainer.evaluate(eval_dataset=test_dataset)
-    #     trainer.log_metrics("eval", metrics)
-    #     trainer.save_metrics("eval", metrics)
+        # This is just using netfound to extract the hidden representation of the input - not making predictions
+        trainer.evaluate(eval_dataset=train_dataset)
+        
+        logger.warning("*** Save features ***")
 
-    train_dataloader = trainer.get_train_dataloader()
-
-    # a bit dodgy... we are going to poke parts of the model manually to avoid calling model's internal fit method
+        # And then we save to file to use later
+        trainer.dump_features(os.path.join(training_args.output_dir))
 
     if training_args.do_train:
-        logger.warning("*** 1 Use netfound as feature extractor ***")
-        model.eval()
-
-        all_features = []
-        all_labels = []
-
-        # Extract features using netfound
-        for batch in tqdm(train_dataloader, desc="Feature extraction"):
-            # Manually move all tensor data in the batch to the correct device to avoid poor performance
-            inputs = {k: v.to('cuda') for k, v in batch.items() if isinstance(v, torch.Tensor)}
-
-            with torch.no_grad():
-                # 1. Get base transformer outputs
-                outputs = model.base_transformer(
-                    input_ids=inputs.get('input_ids'),
-                    attention_mask=inputs.get('attention_mask'),
-                    # Pass all required inputs for the base model
-                    direction=inputs.get('direction'),
-                    iats=inputs.get('iats'),
-                    bytes=inputs.get('bytes'),
-                    pkt_count=inputs.get('pkt_count'),
-                    protocol=inputs.get('protocol'),
-                    return_dict=True
-                )
-                # sequence_output = outputs[0]
-                sequence_output = outputs.last_hidden_state
-
-                # 2. Get attentive pooling output
-                pooled_output = model.poolingByAttention(sequence_output, model.config.max_burst_length)
-
-                # 3. Handle stats if they exist
-                stats = batch.get('stats')
-                if stats is not None:
-                    features = torch.cat([pooled_output, stats], dim=-1)
-                else:
-                    features = pooled_output
-                
-                # 4. Collect features and labels on the CPU
-                all_features.append(features.cpu())
-                all_labels.append(batch.get('labels').cpu())
-
-        # Consolidate all features and labels into single tensors
-        logger.warning("Consolidating all features for training...")
-        final_features = torch.cat(all_features, dim=0)
-        final_labels = torch.cat(all_labels, dim=0)
-        
-        # Clear memory
-        del all_features
-        del all_labels
-
-        logger.warning(f"*** 2 Fit Random Forest on {final_features.shape[0]} samples ***")
+        logger.warning("*** 2 train RF classifier ***")
     
         # Fit RF classifier once on whole dataset
         model.classifier_head.fit(final_features, final_labels)
@@ -292,9 +254,8 @@ def main():
         
         trainer.save_state()
 
-
     if training_args.do_eval:
-        logger.warning("*** Evaluate ***")
+        logger.warning("*** 3 Evaluate ***")
 
         # Load the trained Random Forest classifier
         rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
@@ -306,7 +267,7 @@ def main():
 
         # Do evaluation
         model.set_training_mode(False)
-        metrics = trainer.evaluate(eval_dataset=test_dataset)
+        # metrics = trainer.evaluate(eval_dataset=test_dataset)
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
 

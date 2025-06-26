@@ -3,6 +3,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import torch
 from transformers import Trainer
 
+import joblib
+import os
 
 class NetfoundTrainer(Trainer):
 
@@ -22,6 +24,10 @@ class NetfoundTrainer(Trainer):
         }
         self._signature_columns += self.extraFields
         self._signature_columns = list(set(self._signature_columns))
+        
+        # This will store the extracted features from the NetFoundFeatureExtractor
+        self.all_features = []
+        self.all_labels = []
 
     def __init__(self, label_names=None, extraFields = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -38,8 +44,8 @@ class NetfoundTrainer(Trainer):
         ignore_keys: Optional[List[str]] = None,
     ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
         """
-        Performs a prediction step on the model and returns the loss, logits, and labels.
-        This override bypasses compute_loss, which expects a loss from the model.
+        This prediction step has the sole purpose of extracting features so we can dump them to file
+        Nothing is returned
         """
         # Ensure model is in evaluation mode and inputs are on the correct device
         model.eval()
@@ -48,16 +54,17 @@ class NetfoundTrainer(Trainer):
         with torch.no_grad():
             # Get model outputs directly
             outputs = model(**inputs)
-        
-        # The logits are the direct predictions from our Random Forest head
-        logits = outputs.logits
 
         # Labels are in the inputs dictionary
         labels = inputs.get("labels")
 
-        # By returning `None` for the loss, we tell the evaluation loop that
-        # we don't have a loss value to report, which is fine.
-        # The evaluation_loop will then skip trying to average the loss.
-        loss = None
+        self.all_features.append(outputs.features.cpu())
+        self.all_labels.append(labels.cpu())
         
-        return (loss, logits, labels)
+        return (None, None, None)
+    
+    def dump_features(self, output_dir):
+        final_features = torch.cat(self.all_features, dim=0)
+        final_labels = torch.cat(self.all_labels, dim=0)
+        joblib.dump(final_features, os.path.join(output_dir, "features.joblib"))
+        joblib.dump(final_labels, os.path.join(output_dir, "labels.joblib"))
