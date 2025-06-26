@@ -39,7 +39,7 @@ from NetFoundTrainer import NetfoundTrainer
 from NetfoundConfig import NetfoundConfig, NetFoundTCPOptionsConfig, NetFoundLarge
 from NetfoundTokenizer import NetFoundTokenizer
 from utils import ModelArguments, CommonDataTrainingArguments, freeze, verify_checkpoint, \
-    load_train_test_datasets, get_90_percent_cpu_count, get_logger, init_tbwriter, update_deepspeed_config, \
+    load_train_test_datasets, load_full_dataset, get_90_percent_cpu_count, get_logger, init_tbwriter, update_deepspeed_config, \
     LearningRateLogCallback
 
 import joblib
@@ -127,10 +127,12 @@ def main():
     logger.info(f"data_args: {data_args}")
     logger.info(f"training_args: {training_args}")
 
-    train_dataset, test_dataset = load_train_test_datasets(logger, data_args)
+    full_dataset = load_full_dataset(logger, data_args)
+    # train_dataset, test_dataset = load_train_test_datasets(logger, data_args)
     if "WORLD_SIZE" in os.environ:
-        train_dataset = split_dataset_by_node(train_dataset, rank=int(os.environ["RANK"]), world_size=int(os.environ["WORLD_SIZE"]))
-        test_dataset = split_dataset_by_node(test_dataset, rank=int(os.environ["RANK"]), world_size=int(os.environ["WORLD_SIZE"]))
+        full_dataset = split_dataset_by_node(full_dataset, rank=int(os.environ["RANK"]), world_size=int(os.environ["WORLD_SIZE"]))
+        # train_dataset = split_dataset_by_node(train_dataset, rank=int(os.environ["RANK"]), world_size=int(os.environ["WORLD_SIZE"]))
+        # test_dataset = split_dataset_by_node(test_dataset, rank=int(os.environ["RANK"]), world_size=int(os.environ["WORLD_SIZE"]))
 
     config = NetFoundTCPOptionsConfig if data_args.tcpoptions else NetfoundConfig
     config = config(
@@ -166,8 +168,9 @@ def main():
     }
     if not data_args.streaming:
         params['num_proc'] = data_args.preprocessing_num_workers or get_90_percent_cpu_count()
-    train_dataset = train_dataset.map(function=trainingTokenizer, **params)
-    test_dataset = test_dataset.map(function=testingTokenizer, **params)
+    full_dataset = full_dataset.map(function=trainingTokenizer, **params)
+    # train_dataset = train_dataset.map(function=trainingTokenizer, **params)
+    # test_dataset = test_dataset.map(function=testingTokenizer, **params)
 
     if "WORLD_SIZE" in os.environ and training_args.local_rank == 0 and not data_args.streaming:
         logger.warning("Loading results from main process")
@@ -210,12 +213,21 @@ def main():
     else:
         compute_metrics = lambda p: classif_metrics(p, data_args.num_labels)
 
+    # trainer = NetfoundTrainer(
+    #     model=model,
+    #     extraFields=additionalFields,
+    #     args=training_args,
+    #     train_dataset=train_dataset,
+    #     eval_dataset=test_dataset,
+    #     tokenizer=testingTokenizer,
+    #     compute_metrics=compute_metrics,
+    #     callbacks=[EarlyStoppingCallback(early_stopping_patience=6)],
+    #     data_collator=data_collator,
+    # )
     trainer = NetfoundTrainer(
         model=model,
         extraFields=additionalFields,
         args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=test_dataset,
         tokenizer=testingTokenizer,
         compute_metrics=compute_metrics,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=6)],
@@ -234,42 +246,42 @@ def main():
         logger.warning("*** 1 Use netfound as feature extractor ***")
 
         # This is just using netfound to extract the hidden representation of the input - not making predictions
-        trainer.evaluate(eval_dataset=train_dataset)
+        trainer.evaluate(eval_dataset=full_dataset)
         
         logger.warning("*** Save features ***")
 
         # And then we save to file to use later
         trainer.dump_features(os.path.join(training_args.output_dir))
 
-    if training_args.do_train:
-        logger.warning("*** 2 train RF classifier ***")
+    # if training_args.do_train:
+    #     logger.warning("*** 2 train RF classifier ***")
     
-        # Fit RF classifier once on whole dataset
-        model.classifier_head.fit(final_features, final_labels)
+    #     # Fit RF classifier once on whole dataset
+    #     model.classifier_head.fit(final_features, final_labels)
 
-        logger.warning("Saving the Random Forest classifier...")
-        rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
-        joblib.dump(model.classifier_head.classifier, rf_classifier_path)
-        logger.warning(f"Classifier saved to {rf_classifier_path}")
+    #     logger.warning("Saving the Random Forest classifier...")
+    #     rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
+    #     joblib.dump(model.classifier_head.classifier, rf_classifier_path)
+    #     logger.warning(f"Classifier saved to {rf_classifier_path}")
         
-        trainer.save_state()
+    #     trainer.save_state()
 
-    if training_args.do_eval:
-        logger.warning("*** 3 Evaluate ***")
+    # if training_args.do_eval:
+    #     logger.warning("*** 3 Evaluate ***")
 
-        # Load the trained Random Forest classifier
-        rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
-        if os.path.exists(rf_classifier_path):
-             logger.warning(f"Loading trained Random Forest classifier from {rf_classifier_path}")
-             model.classifier_head.classifier = joblib.load(rf_classifier_path)
-        else:
-             logger.warning("Could not find a trained RF classifier. Evaluation may fail or be random.")
+    #     # Load the trained Random Forest classifier
+    #     rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
+    #     if os.path.exists(rf_classifier_path):
+    #          logger.warning(f"Loading trained Random Forest classifier from {rf_classifier_path}")
+    #          model.classifier_head.classifier = joblib.load(rf_classifier_path)
+    #     else:
+    #          logger.warning("Could not find a trained RF classifier. Evaluation may fail or be random.")
 
-        # Do evaluation
-        model.set_training_mode(False)
-        # metrics = trainer.evaluate(eval_dataset=test_dataset)
-        trainer.log_metrics("eval", metrics)
-        trainer.save_metrics("eval", metrics)
+    #     # Do evaluation
+    #     model.set_training_mode(False)
+    #     # metrics = trainer.evaluate(eval_dataset=test_dataset)
+    #     trainer.log_metrics("eval", metrics)
+    #     trainer.save_metrics("eval", metrics)
 
 
 if __name__ == "__main__":

@@ -247,8 +247,27 @@ def load_train_test_datasets(logger, data_args):
     train_dataset = train_dataset.add_column("total_bursts", total_bursts_train)
     test_dataset = test_dataset.add_column("total_bursts", total_bursts_test)
 
-
     return train_dataset, test_dataset
+
+
+def load_full_dataset(logger, data_args):
+    logger.warning("Loading full dataset")
+    full_dataset = load_dataset(
+        "arrow",
+        data_dir=data_args.train_dir,
+        split="train",
+        cache_dir=data_args.data_cache_dir,
+        streaming=data_args.streaming,
+    )
+
+    if not data_args.streaming:
+        total_bursts_full = [0] * len(full_dataset)
+    else:
+        total_bursts_full = defaultdict(lambda: 0)
+    
+    full_dataset = full_dataset.add_column("total_bursts", total_bursts_full)
+
+    return full_dataset
 
 
 def initialize_model_with_deepspeed(logger, training_args, get_model):

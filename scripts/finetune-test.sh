@@ -37,8 +37,8 @@ python \
     --overwrite_output_dir \
     --save_safetensors false \
     --do_feature_extraction \
-    --eval_strategy epoch \
-    --save_strategy epoch \
+    --eval_strategy no \
+    --save_strategy no \
     --learning_rate 0.0002 \
     --num_train_epochs 1 \
     --problem_type single_label_classification \
