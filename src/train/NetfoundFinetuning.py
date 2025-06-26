@@ -42,6 +42,9 @@ from utils import ModelArguments, CommonDataTrainingArguments, freeze, verify_ch
     load_train_test_datasets, get_90_percent_cpu_count, get_logger, init_tbwriter, update_deepspeed_config, \
     LearningRateLogCallback
 
+import joblib
+from tqdm import tqdm
+
 random.seed(42)
 logger = get_logger(name=__name__)
 
@@ -132,6 +135,7 @@ def main():
         hidden_size=model_args.hidden_size,
         no_meta=data_args.no_meta,
         flat=data_args.flat,
+        n_estimators=model_args.n_estimators
     )
     if data_args.netfound_large:
         config.hidden_size = NetFoundLarge().hidden_size
@@ -205,18 +209,103 @@ def main():
 
     verify_checkpoint(logger, training_args)
 
-    if training_args.do_train:
-        logger.warning("*** Train ***")
-        train_result = trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
-        trainer.save_model()  # doesn't store tokenizer
-        metrics = train_result.metrics
+    # if training_args.do_train:
+    #     logger.warning("*** Train ***")
+    #     train_result = trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
+    #     trainer.save_model()  # doesn't store tokenizer
+    #     metrics = train_result.metrics
 
-        trainer.log_metrics("train", metrics)
-        trainer.save_metrics("train", metrics)
+    #     trainer.log_metrics("train", metrics)
+    #     trainer.save_metrics("train", metrics)
+    #     trainer.save_state()
+
+    # if training_args.do_eval:
+    #     logger.warning("*** Evaluate ***")
+    #     metrics = trainer.evaluate(eval_dataset=test_dataset)
+    #     trainer.log_metrics("eval", metrics)
+    #     trainer.save_metrics("eval", metrics)
+
+    train_dataloader = trainer.get_train_dataloader()
+
+    # a bit dodgy... we are going to poke parts of the model manually to avoid calling model's internal fit method
+
+    if training_args.do_train:
+        logger.warning("*** 1 Use netfound as feature extractor ***")
+        model.eval()
+
+        all_features = []
+        all_labels = []
+
+        # Extract features using netfound
+        for batch in tqdm(train_dataloader, desc="Feature extraction"):
+            # Manually move all tensor data in the batch to the correct device to avoid poor performance
+            inputs = {k: v.to('cuda') for k, v in batch.items() if isinstance(v, torch.Tensor)}
+
+            with torch.no_grad():
+                # 1. Get base transformer outputs
+                outputs = model.base_transformer(
+                    input_ids=inputs.get('input_ids'),
+                    attention_mask=inputs.get('attention_mask'),
+                    # Pass all required inputs for the base model
+                    direction=inputs.get('direction'),
+                    iats=inputs.get('iats'),
+                    bytes=inputs.get('bytes'),
+                    pkt_count=inputs.get('pkt_count'),
+                    protocol=inputs.get('protocol'),
+                    return_dict=True
+                )
+                # sequence_output = outputs[0]
+                sequence_output = outputs.last_hidden_state
+
+                # 2. Get attentive pooling output
+                pooled_output = model.poolingByAttention(sequence_output, model.config.max_burst_length)
+
+                # 3. Handle stats if they exist
+                stats = batch.get('stats')
+                if stats is not None:
+                    features = torch.cat([pooled_output, stats], dim=-1)
+                else:
+                    features = pooled_output
+                
+                # 4. Collect features and labels on the CPU
+                all_features.append(features.cpu())
+                all_labels.append(batch.get('labels').cpu())
+
+        # Consolidate all features and labels into single tensors
+        logger.warning("Consolidating all features for training...")
+        final_features = torch.cat(all_features, dim=0)
+        final_labels = torch.cat(all_labels, dim=0)
+        
+        # Clear memory
+        del all_features
+        del all_labels
+
+        logger.warning(f"*** 2 Fit Random Forest on {final_features.shape[0]} samples ***")
+    
+        # Fit RF classifier once on whole dataset
+        model.classifier_head.fit(final_features, final_labels)
+
+        logger.warning("Saving the Random Forest classifier...")
+        rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
+        joblib.dump(model.classifier_head.classifier, rf_classifier_path)
+        logger.warning(f"Classifier saved to {rf_classifier_path}")
+        
         trainer.save_state()
+
 
     if training_args.do_eval:
         logger.warning("*** Evaluate ***")
+
+        # Load the trained Random Forest classifier
+        rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
+        if os.path.exists(rf_classifier_path):
+             logger.warning(f"Loading trained Random Forest classifier from {rf_classifier_path}")
+             model.classifier_head.classifier = joblib.load(rf_classifier_path)
+        else:
+             logger.warning("Could not find a trained RF classifier. Evaluation may fail or be random.")
+
+        # Do evaluation
+        model.set_training_mode(False)
         metrics = trainer.evaluate(eval_dataset=test_dataset)
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)

@@ -32,7 +32,7 @@ python \
     src/train/NetfoundFinetuning.py \
     --train_dir /mnt/extra/processed/iot2023/iot2023-8class-big-benign \
     --model_name_or_path /mnt/extra/models/netFound-640M-base \
-    --output_dir /mnt/extra/models/iot2023 \
+    --output_dir /mnt/extra/models/iot2023-rf \
     --report_to tensorboard \
     --overwrite_output_dir \
     --save_safetensors false \
@@ -51,7 +51,8 @@ python \
     --bf16 \
     --dataloader_num_workers 8 \
     --per_device_eval_batch_size 32 \
-    --per_device_train_batch_size 32
+    --per_device_train_batch_size 32 \
+    --n_estimators 100
     # --per_device_train_batch_size 32 \
     # --data_cache_dir /mnt/extra/tmp
 
