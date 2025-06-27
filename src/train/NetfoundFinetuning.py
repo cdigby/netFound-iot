@@ -281,6 +281,8 @@ def main():
         if os.path.exists(data_args.hr_dir):
             logger.warning(f"{data_args.hr_dir} already exists - abort as to not overwrite")
             sys.exit()
+        else:
+            os.mkdir(data_args.hr_dir)
 
         # This is just using netfound to extract the hidden representation of the input - not making predictions
         trainer.evaluate(eval_dataset=full_dataset)
@@ -288,7 +290,7 @@ def main():
         logger.warning("*** Save features ***")
 
         # And then we save to file to use later
-        trainer.dump_features(trainer.dump_features(data_args.hr_dir))
+        trainer.dump_features(data_args.hr_dir)
 
     if data_args.do_rf_train:
         logger.warning("*** 2 train RF classifier ***")
