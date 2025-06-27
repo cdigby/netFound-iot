@@ -43,7 +43,7 @@ from utils import ModelArguments, CommonDataTrainingArguments, freeze, verify_ch
     LearningRateLogCallback
 
 import joblib
-from tqdm import tqdm
+from sklearn.ensemble import RandomForestClassifier
 
 random.seed(42)
 logger = get_logger(name=__name__)
@@ -76,6 +76,22 @@ class FineTuningDataTrainingArguments(CommonDataTrainingArguments):
         default=False,
         metadata={"help": "Whether to do feature extraction."},
     )
+    do_rf_train: bool = field(
+        default=False,
+        metadata={"help": "Whether to do random forest training."},
+    )
+    do_rf_eval: bool = field(
+        default=False,
+        metadata={"help": "Whether to do random forest eval."},
+    )
+    hr_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Directory with preprocessed hidden representation (features.joblib and labels.joblib files)."},
+    )
+    n_estimators: int = field(
+        default=100,
+        metadata={"help": "Number of trees in the random forest."},
+    )
 
 
 def regression_metrics(p: EvalPrediction):
@@ -105,6 +121,12 @@ def classif_metrics(p: EvalPrediction, num_classes):
         logger.warning(f"top5:{top_k_accuracy_score(label_ids, logits, k=5, labels=np.arange(num_classes))}")
     if num_classes > 10:
         logger.warning(f"top10:{top_k_accuracy_score(label_ids, logits, k=10, labels=np.arange(num_classes))}")
+
+    logger.warning(f"accuracy: {accuracy}")
+    logger.warning(f"weighted_prec: {weighted_prec}")
+    logger.warning(f"weighted_recall: {weighted_recall}")
+    logger.warning(f"weighted_f1: {weighted_f1}")
+    
     return {
         "weighted_f1": weighted_f1,
         "accuracy": accuracy,
@@ -127,7 +149,8 @@ def main():
     logger.info(f"data_args: {data_args}")
     logger.info(f"training_args: {training_args}")
 
-    full_dataset = load_full_dataset(logger, data_args)
+    if data_args.do_feature_extraction:
+        full_dataset = load_full_dataset(logger, data_args)
     # train_dataset, test_dataset = load_train_test_datasets(logger, data_args)
     if "WORLD_SIZE" in os.environ:
         full_dataset = split_dataset_by_node(full_dataset, rank=int(os.environ["RANK"]), world_size=int(os.environ["WORLD_SIZE"]))
@@ -141,7 +164,6 @@ def main():
         hidden_size=model_args.hidden_size,
         no_meta=data_args.no_meta,
         flat=data_args.flat,
-        n_estimators=model_args.n_estimators
     )
     if data_args.netfound_large:
         config.hidden_size = NetFoundLarge().hidden_size
@@ -168,7 +190,9 @@ def main():
     }
     if not data_args.streaming:
         params['num_proc'] = data_args.preprocessing_num_workers or get_90_percent_cpu_count()
-    full_dataset = full_dataset.map(function=trainingTokenizer, **params)
+    
+    if data_args.do_feature_extraction:
+        full_dataset = full_dataset.map(function=trainingTokenizer, **params)
     # train_dataset = train_dataset.map(function=trainingTokenizer, **params)
     # test_dataset = test_dataset.map(function=testingTokenizer, **params)
 
@@ -192,19 +216,20 @@ def main():
     #     summary(model)
 
     ### CHANGE TO USE NETFOUND FEATURE EXTRACTOR
-    if model_args.model_name_or_path is not None and os.path.exists(
-            model_args.model_name_or_path
-    ):
-        logger.warning(f"Using weights from {model_args.model_name_or_path}")
-        model = freeze(NetfoundFeatureExtractor.from_pretrained(
-            model_args.model_name_or_path, config=config
-        ), model_args)
-    elif model_args.no_ptm:
-        model = NetfoundNoPTM(config=config)
-    else:
-        model = freeze(NetfoundFeatureExtractor(config=config), model_args)
-    if training_args.local_rank == 0:
-        summary(model)
+    if data_args.do_feature_extraction:
+        if model_args.model_name_or_path is not None and os.path.exists(
+                model_args.model_name_or_path
+        ):
+            logger.warning(f"Using weights from {model_args.model_name_or_path}")
+            model = freeze(NetfoundFeatureExtractor.from_pretrained(
+                model_args.model_name_or_path, config=config
+            ), model_args)
+        elif model_args.no_ptm:
+            model = NetfoundNoPTM(config=config)
+        else:
+            model = freeze(NetfoundFeatureExtractor(config=config), model_args)
+        if training_args.local_rank == 0:
+            summary(model)
 
     # metrics
     problem_type = data_args.problem_type
@@ -224,26 +249,38 @@ def main():
     #     callbacks=[EarlyStoppingCallback(early_stopping_patience=6)],
     #     data_collator=data_collator,
     # )
-    trainer = NetfoundTrainer(
-        model=model,
-        extraFields=additionalFields,
-        args=training_args,
-        tokenizer=testingTokenizer,
-        compute_metrics=compute_metrics,
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=6)],
-        data_collator=data_collator,
-    )
-    init_tbwriter(training_args.output_dir)
-    trainer.add_callback(LearningRateLogCallback(utils.TB_WRITER))
-    utils.start_gpu_logging(training_args.output_dir)
-    utils.start_cpu_logging(training_args.output_dir)
+    if data_args.do_feature_extraction:
+        trainer = NetfoundTrainer(
+            model=model,
+            extraFields=additionalFields,
+            args=training_args,
+            tokenizer=testingTokenizer,
+            compute_metrics=compute_metrics,
+            callbacks=[EarlyStoppingCallback(early_stopping_patience=6)],
+            data_collator=data_collator,
+        )
+        init_tbwriter(training_args.output_dir)
+        trainer.add_callback(LearningRateLogCallback(utils.TB_WRITER))
+        utils.start_gpu_logging(training_args.output_dir)
+        utils.start_cpu_logging(training_args.output_dir)
 
-    verify_checkpoint(logger, training_args)
+    # verify_checkpoint(logger, training_args)
 
     # train_dataloader = trainer.get_train_dataloader()
 
+    rf_classifier = RandomForestClassifier(
+        n_estimators=data_args.n_estimators,
+        random_state=42,
+        n_jobs=-1,
+        verbose=1
+    )
+
     if data_args.do_feature_extraction:
         logger.warning("*** 1 Use netfound as feature extractor ***")
+
+        if os.path.exists(data_args.hr_dir):
+            logger.warning(f"{data_args.hr_dir} already exists - abort as to not overwrite")
+            sys.exit()
 
         # This is just using netfound to extract the hidden representation of the input - not making predictions
         trainer.evaluate(eval_dataset=full_dataset)
@@ -251,38 +288,86 @@ def main():
         logger.warning("*** Save features ***")
 
         # And then we save to file to use later
-        trainer.dump_features(os.path.join(training_args.output_dir))
+        trainer.dump_features(trainer.dump_features(data_args.hr_dir))
 
-    # if training_args.do_train:
-    #     logger.warning("*** 2 train RF classifier ***")
-    
-    #     # Fit RF classifier once on whole dataset
-    #     model.classifier_head.fit(final_features, final_labels)
+    if data_args.do_rf_train:
+        logger.warning("*** 2 train RF classifier ***")
+        features_path = os.path.join(data_args.hr_dir, "features.joblib")
+        labels_path = os.path.join(data_args.hr_dir, "labels.joblib")
 
-    #     logger.warning("Saving the Random Forest classifier...")
-    #     rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
-    #     joblib.dump(model.classifier_head.classifier, rf_classifier_path)
-    #     logger.warning(f"Classifier saved to {rf_classifier_path}")
+        if not os.path.exists(features_path):
+            logger.warning(f"{features_path} does not exist")
         
-    #     trainer.save_state()
+        if not os.path.exists(labels_path):
+            logger.warning(f"{labels_path} does not exist")
 
-    # if training_args.do_eval:
-    #     logger.warning("*** 3 Evaluate ***")
+        if os.path.exists(training_args.output_dir):
+            logger.warning(f"{training_args.output_dir} already exists - abort as to not overwrite")
+            sys.exit()
+        else:
+            os.mkdir(training_args.output_dir)
 
-    #     # Load the trained Random Forest classifier
-    #     rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
-    #     if os.path.exists(rf_classifier_path):
-    #          logger.warning(f"Loading trained Random Forest classifier from {rf_classifier_path}")
-    #          model.classifier_head.classifier = joblib.load(rf_classifier_path)
-    #     else:
-    #          logger.warning("Could not find a trained RF classifier. Evaluation may fail or be random.")
+        logger.warning(f"Loading features from {features_path}")
+        features = joblib.load(features_path).detach().cpu().numpy()
 
-    #     # Do evaluation
-    #     model.set_training_mode(False)
-    #     # metrics = trainer.evaluate(eval_dataset=test_dataset)
-    #     trainer.log_metrics("eval", metrics)
-    #     trainer.save_metrics("eval", metrics)
+        logger.warning(f"Loading labels from {labels_path}")
+        labels = joblib.load(labels_path).detach().cpu().numpy()
 
+        logger.warning("Start training")
+
+        # Take first 80% of the dataset for training
+        split = int(len(features) * 0.8)
+        rf_classifier.fit(features[0:split], labels[0:split])
+
+        logger.warning("Save RF classifier...")
+        rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
+        joblib.dump(rf_classifier, rf_classifier_path)
+        logger.warning(f"Classifier saved to {rf_classifier_path}")
+
+        del features
+        del labels
+
+    if data_args.do_rf_eval:
+        logger.warning("*** 3 Evaluate ***")
+
+        # Load the trained Random Forest classifier
+        rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
+        if not os.path.exists(rf_classifier_path):
+            logger.warning(f"{rf_classifier_path} does not exist")
+
+        # Load features and labels
+        features_path = os.path.join(data_args.hr_dir, "features.joblib")
+        labels_path = os.path.join(data_args.hr_dir, "labels.joblib")
+
+        if not os.path.exists(features_path):
+            logger.warning(f"{features_path} does not exist")
+        
+        if not os.path.exists(labels_path):
+            logger.warning(f"{labels_path} does not exist")
+
+        logger.warning(f"Loading features from {features_path}")
+        features = joblib.load(features_path).detach().cpu().numpy()
+
+        logger.warning(f"Loading labels from {labels_path}")
+        labels = joblib.load(labels_path).detach().cpu().numpy()
+ 
+        logger.warning(f"Loading trained RF classifier from {rf_classifier_path}")
+        rf_classifier = joblib.load(rf_classifier_path)
+
+        logger.warning("Start evaluating")
+
+        # Take last 20% of the dataset for evaluation    
+        split = int(len(features) * 0.8)
+        predictions = rf_classifier.predict_proba(features[split:len(features)])
+        p = EvalPrediction(
+            predictions=predictions,
+            label_ids=labels[split:len(features)]
+        )
+        classif_metrics(p, data_args.num_labels)
+
+        del features
+        del labels
+        
 
 if __name__ == "__main__":
     main()

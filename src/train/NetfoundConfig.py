@@ -39,7 +39,6 @@ class NetfoundConfig(PretrainedConfig):
         subflow_bursts = 3,
         no_metadata_loss=False,
         no_direction_loss=False,
-        n_estimators=100,
         **kwargs
     ):
         super().__init__(pad_token_id=pad_token_id, **kwargs)
@@ -79,7 +78,6 @@ class NetfoundConfig(PretrainedConfig):
         self.subflow_bursts = subflow_bursts
         self.no_metadata_loss = no_metadata_loss
         self.no_direction_loss = no_direction_loss
-        self.n_estimators = n_estimators
 
 class NetFoundLarge(NetfoundConfig):
     def __init__(self, **kwargs):

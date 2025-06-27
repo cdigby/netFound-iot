@@ -27,9 +27,6 @@ from transformers.utils import ModelOutput
 import copy
 from dataclasses import dataclass
 
-from sklearn.ensemble import RandomForestClassifier
-import numpy as np
-
 logger = get_logger(__name__)
 
 TORCH_IGNORE_INDEX = -100
@@ -947,28 +944,6 @@ class NetfoundFinetuningModel(NetFoundPretrainedModel):
             logits=logits,
         )
 
-class RandomForestClassifierHead:
-    def __init__(self, config):
-        self.config = config
-        self.classifier = RandomForestClassifier(
-            n_estimators=config.n_estimators,
-            random_state=42,
-            n_jobs=-1,
-        )
-    
-    def fit(self, features, labels):
-        # Convert tensors to numpy arrays for scikit-learn
-        features_np = features.detach().cpu().numpy()
-        labels_np = labels.detach().cpu().numpy()
-        self.classifier.fit(features_np, labels_np)
-
-    def predict(self, features):
-        features_np = features.detach().cpu().numpy()
-        return self.classifier.predict(features_np)
-
-    def predict_proba(self, features):
-        features_np = features.detach().cpu().numpy()
-        return self.classifier.predict_proba(features_np)
 
 @dataclass
 class NetfoundFeatureExtractorOutput(SequenceClassifierOutput):

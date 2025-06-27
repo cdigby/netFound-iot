@@ -68,10 +68,6 @@ class ModelArguments:
         default=False,
         metadata={"help": "Freeze base model"},
     )
-    n_estimators: int = field(
-        default=100,
-        metadata={"help": "Number of trees in the random forest."},
-    )
 
 
 @dataclass
