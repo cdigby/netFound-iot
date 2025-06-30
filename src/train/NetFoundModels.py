@@ -974,10 +974,6 @@ class NetfoundFeatureExtractor(NetFoundPretrainedModel):
 
         # Initialize weights and apply final processing
         self.post_init()
-    
-    def set_training_mode(self, mode: bool):
-        """Sets the model to training or evaluation mode."""
-        self.training_mode = mode
 
     def poolingByAttention(self, sequence_output, max_burst_length):
         burstReps = sequence_output[:, ::max_burst_length, :].clone()

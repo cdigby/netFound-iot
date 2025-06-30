@@ -30,13 +30,14 @@
 
 python \
     src/train/NetfoundFinetuning.py \
-    --train_dir /mnt/extra/processed/iot2023/iot2023-8class-big-benign \
+    --train_dir /mnt/extra/processed/iot2023/iot2023-8class-http \
     --model_name_or_path /mnt/extra/models/netFound-640M-base \
-    --hr_dir /mnt/extra/models/iot2023-hr \
-    --output_dir /mnt/extra/models/iot2023-rf-1000 \
+    --hr_dir /mnt/extra/models/iot2023-hr-http \
+    --output_dir /mnt/extra/models/iot2023-rf-100-http \
     --report_to tensorboard \
     --overwrite_output_dir \
     --save_safetensors false \
+    --do_feature_extraction \
     --do_rf_train \
     --do_rf_eval \
     --eval_strategy no \
@@ -53,7 +54,7 @@ python \
     --dataloader_num_workers 8 \
     --per_device_eval_batch_size 32 \
     --per_device_train_batch_size 32 \
-    --n_estimators 1000
+    --n_estimators 100
     # --per_device_train_batch_size 32 \
     # --data_cache_dir /mnt/extra/tmp
 

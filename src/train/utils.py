@@ -247,7 +247,7 @@ def load_train_test_datasets(logger, data_args):
 
 
 def load_full_dataset(logger, data_args):
-    logger.warning("Loading full dataset")
+    logger.warning(f"Loading full dataset from {data_args.train_dir}")
     full_dataset = load_dataset(
         "arrow",
         data_dir=data_args.train_dir,

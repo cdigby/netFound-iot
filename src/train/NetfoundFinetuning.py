@@ -303,10 +303,12 @@ def main():
         if not os.path.exists(labels_path):
             logger.warning(f"{labels_path} does not exist")
 
-        if os.path.exists(training_args.output_dir):
-            logger.warning(f"{training_args.output_dir} already exists - abort as to not overwrite")
+        rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
+        if os.path.exists(rf_classifier_path):
+            logger.warning(f"{rf_classifier_path} already exists - abort as to not overwrite")
             sys.exit()
-        else:
+
+        if not os.path.exists(training_args.output_dir):
             os.mkdir(training_args.output_dir)
 
         logger.warning(f"Loading features from {features_path}")
@@ -322,7 +324,6 @@ def main():
         rf_classifier.fit(features[0:split], labels[0:split])
 
         logger.warning("Save RF classifier...")
-        rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
         joblib.dump(rf_classifier, rf_classifier_path)
         logger.warning(f"Classifier saved to {rf_classifier_path}")
 
