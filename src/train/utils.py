@@ -158,10 +158,6 @@ def freeze(model, model_args):
             param.requires_grad = False
         if model_args.freeze_base:
             param.requires_grad = False
-    # Need to freeze attentive pooling for RF classifier        
-    for param in model.attentivePooling.parameters():
-        if model_args.freeze_base:
-            param.requires_grad = False
     return model
 
 

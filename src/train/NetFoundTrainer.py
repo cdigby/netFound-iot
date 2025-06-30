@@ -24,10 +24,6 @@ class NetfoundTrainer(Trainer):
         }
         self._signature_columns += self.extraFields
         self._signature_columns = list(set(self._signature_columns))
-        
-        # This will store the extracted features from the NetFoundFeatureExtractor
-        self.all_features = []
-        self.all_labels = []
 
     def __init__(self, label_names=None, extraFields = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -35,6 +31,14 @@ class NetfoundTrainer(Trainer):
             self.extraFields = extraFields
         if label_names is not None:
             self.label_names.extend(label_names)
+
+
+class NetfoundFeatureExtractorTrainer(NetfoundTrainer):
+    def __init__(self, label_names=None, extraFields = None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # This will store the extracted features from the NetFoundFeatureExtractor
+        self.all_features = []
+        self.all_labels = []
 
     def prediction_step(
         self,
@@ -63,8 +67,8 @@ class NetfoundTrainer(Trainer):
         
         return (None, None, None)
     
-    def dump_features(self, output_dir):
+    def dump_features(self, output_dir, label):
         final_features = torch.cat(self.all_features, dim=0)
         final_labels = torch.cat(self.all_labels, dim=0)
-        joblib.dump(final_features, os.path.join(output_dir, "features.joblib"))
-        joblib.dump(final_labels, os.path.join(output_dir, "labels.joblib"))
+        joblib.dump(final_features, os.path.join(output_dir, f"{label}_features.joblib"))
+        joblib.dump(final_labels, os.path.join(output_dir, f"{label}_labels.joblib"))

@@ -32,16 +32,17 @@ python \
     src/train/NetfoundFinetuning.py \
     --train_dir /mnt/extra/processed/iot2023/iot2023-8class-http \
     --model_name_or_path /mnt/extra/models/netFound-640M-base \
-    --hr_dir /mnt/extra/models/iot2023-hr-http \
-    --output_dir /mnt/extra/models/iot2023-rf-100-http \
+    --hr_dir /mnt/extra/models/iot2023-hr-http-unfreeze-ap \
+    --output_dir /mnt/extra/models/iot2023-rf-100-http-unfreeze-ap \
     --report_to tensorboard \
     --overwrite_output_dir \
     --save_safetensors false \
+    --do_train_feature_extractor \
     --do_feature_extraction \
     --do_rf_train \
     --do_rf_eval \
-    --eval_strategy no \
-    --save_strategy no \
+    --eval_strategy epoch \
+    --save_strategy epoch \
     --learning_rate 0.0002 \
     --num_train_epochs 1 \
     --problem_type single_label_classification \
