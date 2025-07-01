@@ -153,10 +153,11 @@ def main():
     logger.info(f"data_args: {data_args}")
     logger.info(f"training_args: {training_args}")
 
-    train_dataset, test_dataset = load_train_test_datasets(logger, data_args)
-    if "WORLD_SIZE" in os.environ:
-        train_dataset = split_dataset_by_node(train_dataset, rank=int(os.environ["RANK"]), world_size=int(os.environ["WORLD_SIZE"]))
-        test_dataset = split_dataset_by_node(test_dataset, rank=int(os.environ["RANK"]), world_size=int(os.environ["WORLD_SIZE"]))
+    if data_args.do_feature_extraction or data_args.do_train_feature_extractor:
+        train_dataset, test_dataset = load_train_test_datasets(logger, data_args)
+        if "WORLD_SIZE" in os.environ:
+            train_dataset = split_dataset_by_node(train_dataset, rank=int(os.environ["RANK"]), world_size=int(os.environ["WORLD_SIZE"]))
+            test_dataset = split_dataset_by_node(test_dataset, rank=int(os.environ["RANK"]), world_size=int(os.environ["WORLD_SIZE"]))
 
     config = NetFoundTCPOptionsConfig if data_args.tcpoptions else NetfoundConfig
     config = config(
@@ -192,8 +193,9 @@ def main():
     if not data_args.streaming:
         params['num_proc'] = data_args.preprocessing_num_workers or get_90_percent_cpu_count()
     
-    train_dataset = train_dataset.map(function=trainingTokenizer, **params)
-    test_dataset = test_dataset.map(function=testingTokenizer, **params)
+    if data_args.do_feature_extraction or data_args.do_train_feature_extractor:
+        train_dataset = train_dataset.map(function=trainingTokenizer, **params)
+        test_dataset = test_dataset.map(function=testingTokenizer, **params)
 
     if "WORLD_SIZE" in os.environ and training_args.local_rank == 0 and not data_args.streaming:
         logger.warning("Loading results from main process")
@@ -302,6 +304,9 @@ def main():
         trainer.evaluate(eval_dataset=train_dataset)
         trainer.dump_features(data_args.hr_dir, "train")
 
+        # Reset otherwise the test set will be train + test combined
+        trainer.reset_stored_features()
+
         logger.warning("extracting features from test set")
         trainer.evaluate(eval_dataset=test_dataset)
         trainer.dump_features(data_args.hr_dir, "test")
@@ -333,7 +338,6 @@ def main():
 
         rf_classifier.fit(features, labels)
 
-        logger.warning("Save RF classifier...")
         joblib.dump(rf_classifier, rf_classifier_path)
         logger.warning(f"Classifier saved to {rf_classifier_path}")
 

@@ -72,3 +72,7 @@ class NetfoundFeatureExtractorTrainer(NetfoundTrainer):
         final_labels = torch.cat(self.all_labels, dim=0)
         joblib.dump(final_features, os.path.join(output_dir, f"{label}_features.joblib"))
         joblib.dump(final_labels, os.path.join(output_dir, f"{label}_labels.joblib"))
+
+    def reset_stored_features(self):
+        self.all_features = []
+        self.all_labels = []
