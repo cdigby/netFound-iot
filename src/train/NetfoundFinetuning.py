@@ -42,6 +42,8 @@ from utils import ModelArguments, CommonDataTrainingArguments, freeze, verify_ch
     load_train_test_datasets, get_90_percent_cpu_count, get_logger, init_tbwriter, update_deepspeed_config, \
     LearningRateLogCallback
 
+from sklearn.utils.class_weight import compute_class_weight
+
 random.seed(42)
 logger = get_logger(name=__name__)
 
@@ -187,6 +189,16 @@ def main():
     else:
         compute_metrics = lambda p: classif_metrics(p, data_args.num_labels)
 
+    # Compute class weights
+    train_labels = train_dataset["labels"]
+    class_weights = compute_class_weight(
+        class_weight="balanced",
+        classes=np.unique(train_labels),
+        y=train_labels
+    )
+    class_weights_tensor = torch.tensor(class_weights, dtype=torch.float).to(training_args.device)
+    model.set_class_weights(class_weights_tensor)
+    
     trainer = NetfoundTrainer(
         model=model,
         extraFields=additionalFields,

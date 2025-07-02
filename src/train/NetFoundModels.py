@@ -857,6 +857,12 @@ class NetfoundFinetuningModel(NetFoundPretrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
+        self.class_weights = None
+
+    def set_class_weights(self, class_weights):
+        self.class_weights = class_weights
+        logger.warning(f"Using class weights: {self.class_weights}")
+
     def poolingByAttention(self, sequence_output, max_burst_length):
         burstReps = sequence_output[:, ::max_burst_length, :].clone()
         return self.attentivePooling(burstReps)
@@ -876,7 +882,8 @@ class NetfoundFinetuningModel(NetFoundPretrainedModel):
         pkt_count=None,
         protocol=None,
         stats=None,
-        flow_duration = None
+        flow_duration = None,
+        class_weights=None
     ):
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
@@ -933,7 +940,7 @@ class NetfoundFinetuningModel(NetFoundPretrainedModel):
                 else:
                     loss = loss_fct(logits, labels)
             elif self.config.problem_type == "single_label_classification":
-                loss_fct = CrossEntropyLoss()
+                loss_fct = CrossEntropyLoss(weight=self.class_weights)
                 loss = loss_fct(logits.view(-1, self.num_labels), labels)
 
         if not return_dict:
