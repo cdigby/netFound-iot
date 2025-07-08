@@ -27,6 +27,8 @@ from transformers.utils import ModelOutput
 import copy
 from dataclasses import dataclass
 
+from FocalLoss import FocalLoss
+
 logger = get_logger(__name__)
 
 TORCH_IGNORE_INDEX = -100
@@ -883,7 +885,6 @@ class NetfoundFinetuningModel(NetFoundPretrainedModel):
         protocol=None,
         stats=None,
         flow_duration = None,
-        class_weights=None
     ):
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
@@ -941,6 +942,13 @@ class NetfoundFinetuningModel(NetFoundPretrainedModel):
                     loss = loss_fct(logits, labels)
             elif self.config.problem_type == "single_label_classification":
                 loss_fct = CrossEntropyLoss(weight=self.class_weights)
+                loss_fct = FocalLoss(
+                    gamma=2,
+                    alpha=self.class_weights,
+                    reduction="mean",
+                    task_type="multi-class",
+                    num_classes=self.num_labels
+                )
                 loss = loss_fct(logits.view(-1, self.num_labels), labels)
 
         if not return_dict:

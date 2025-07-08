@@ -32,7 +32,7 @@ python \
     src/train/NetfoundFinetuning.py \
     --train_dir /mnt/extra/processed/iot2023/iot2023-8class-http \
     --model_name_or_path /mnt/extra/models/netFound-640M-base \
-    --output_dir /mnt/extra/models/iot2023-8class-weighted-loss \
+    --output_dir /mnt/extra/models/iot2023-8class-focal-loss-lsw \
     --report_to tensorboard \
     --overwrite_output_dir \
     --save_safetensors false \

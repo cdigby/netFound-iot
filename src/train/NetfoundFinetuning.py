@@ -10,6 +10,7 @@ import numpy as np
 import utils
 import random
 import sys
+import math
 from dataclasses import field, dataclass
 from datasets.distributed import split_dataset_by_node
 from typing import Optional
@@ -190,13 +191,28 @@ def main():
         compute_metrics = lambda p: classif_metrics(p, data_args.num_labels)
 
     # Compute class weights
+    # train_labels = train_dataset["labels"]
+    # class_weights = compute_class_weight(
+    #     class_weight="balanced",
+    #     classes=np.unique(train_labels),
+    #     y=train_labels
+    # )
+    # class_weights_tensor = torch.tensor(class_weights, dtype=torch.float).to(training_args.device)
+
+    # Log smoothed weights
     train_labels = train_dataset["labels"]
-    class_weights = compute_class_weight(
-        class_weight="balanced",
-        classes=np.unique(train_labels),
-        y=train_labels
-    )
-    class_weights_tensor = torch.tensor(class_weights, dtype=torch.float).to(training_args.device)
+    class_counts = np.bincount(train_labels)
+    
+    smoothing_factor = 1.0  # This is a hyperparameter you can tune
+    log_weights = [1.0 / math.log(smoothing_factor + count) for count in class_counts]
+
+    # Normalize the weights so they aren't astronomically large
+    # This helps with training stability
+    sum_weights = sum(log_weights)
+    normalized_weights = [w * (len(class_counts) / sum_weights) for w in log_weights]
+
+    class_weights_tensor = torch.tensor(normalized_weights, dtype=torch.float)
+
     model.set_class_weights(class_weights_tensor)
     
     trainer = NetfoundTrainer(
