@@ -183,6 +183,21 @@ def main():
     if training_args.local_rank == 0:
         summary(model)
 
+    # Unfreeze last 6 hidden layers
+    layers_to_unfreeze = 6
+    for layer in model.base_transformer.encoder.layer[-layers_to_unfreeze:]:
+        for param in layer.parameters():
+            param.requires_grad = True
+
+    # Unfreeze final embeddings
+    for param in model.base_transformer.encoder.burst_positions.parameters():
+        param.requires_grad = True
+    for param in model.base_transformer.encoder.flow_positions.parameters():
+        param.requires_grad = True
+    
+    logger.warning(f"Unfroze last {layers_to_unfreeze} hidden layers and final positional embeddings")
+    summary(model)
+
     # metrics
     problem_type = data_args.problem_type
     if problem_type == "regression":
@@ -210,7 +225,6 @@ def main():
     # This helps with training stability
     sum_weights = sum(log_weights)
     normalized_weights = [w * (len(class_counts) / sum_weights) for w in log_weights]
-
     class_weights_tensor = torch.tensor(normalized_weights, dtype=torch.float)
 
     model.set_class_weights(class_weights_tensor)

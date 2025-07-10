@@ -32,7 +32,7 @@ python \
     src/train/NetfoundFinetuning.py \
     --train_dir /mnt/extra/processed/iot2023/iot2023-8class-http \
     --model_name_or_path /mnt/extra/models/netFound-640M-base \
-    --output_dir /mnt/extra/models/iot2023-8class-focal-loss-lsw \
+    --output_dir /mnt/extra/models/iot2023-8class-unfreeze-lsw \
     --report_to tensorboard \
     --overwrite_output_dir \
     --save_safetensors false \
@@ -40,7 +40,7 @@ python \
     --do_eval \
     --eval_strategy epoch \
     --save_strategy epoch \
-    --learning_rate 0.0002 \
+    --learning_rate 1e-5 \
     --num_train_epochs 1 \
     --problem_type single_label_classification \
     --num_labels 8 \
@@ -50,6 +50,7 @@ python \
     --validation_split_percentage 20 \
     --bf16 \
     --dataloader_num_workers 8 \
-    --per_device_eval_batch_size 40 \
-    --per_device_train_batch_size 40
+    --per_device_eval_batch_size 4 \
+    --per_device_train_batch_size 4 \
+    --gradient_accumulation_steps 10
 
