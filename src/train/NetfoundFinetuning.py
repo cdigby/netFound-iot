@@ -96,6 +96,10 @@ class FineTuningDataTrainingArguments(CommonDataTrainingArguments):
         default=100,
         metadata={"help": "Number of trees in the random forest."},
     )
+    finetuned_base_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Use a finetuned base netfound for the feature extractor rather than the generic base."},
+    )
 
 
 def regression_metrics(p: EvalPrediction):
@@ -275,9 +279,9 @@ def main():
         else:
             os.mkdir(data_args.hr_dir)
 
-        logger.warning(f"Using weights from {training_args.output_dir}")
+        logger.warning(f"Using weights from {data_args.finetuned_base_dir}")
         model = freeze(NetfoundFeatureExtractor.from_pretrained(
-            training_args.output_dir, config=config
+            data_args.finetuned_base_dir, config=config
         ), model_args)
         # Need to freeze attentive pooling for feature extraction       
         for param in model.attentivePooling.parameters():
@@ -322,6 +326,9 @@ def main():
         
         if not os.path.exists(labels_path):
             logger.warning(f"{labels_path} does not exist")
+
+        if not os.path.exists(training_args.output_dir):
+            os.mkdir(training_args.output_dir)
 
         rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
         if os.path.exists(rf_classifier_path):

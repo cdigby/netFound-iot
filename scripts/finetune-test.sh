@@ -32,18 +32,18 @@ python \
     src/train/NetfoundFinetuning.py \
     --train_dir /mnt/extra/processed/iot2023/iot2023-8class-http \
     --model_name_or_path /mnt/extra/models/netFound-640M-base \
-    --hr_dir /mnt/extra/models/iot2023-hr-http-unfreeze-ap \
-    --output_dir /mnt/extra/models/iot2023-rf-100-http-unfreeze-ap \
+    --finetuned_base_dir /mnt/extra/models/iot2023-8class-unfreeze-lsw \
+    --hr_dir /mnt/extra/models/iot2023-hr-ft-base \
+    --output_dir /mnt/extra/models/iot2023-rf-ft-base \
     --report_to tensorboard \
     --overwrite_output_dir \
     --save_safetensors false \
-    --do_train_feature_extractor \
     --do_feature_extraction \
     --do_rf_train \
     --do_rf_eval \
     --eval_strategy epoch \
     --save_strategy epoch \
-    --learning_rate 0.0002 \
+    --learning_rate 5e-1 \
     --num_train_epochs 1 \
     --problem_type single_label_classification \
     --num_labels 8 \
@@ -53,8 +53,8 @@ python \
     --validation_split_percentage 20 \
     --bf16 \
     --dataloader_num_workers 8 \
-    --per_device_eval_batch_size 32 \
-    --per_device_train_batch_size 32 \
+    --per_device_eval_batch_size 40 \
+    --per_device_train_batch_size 40 \
     --n_estimators 100
     # --per_device_train_batch_size 32 \
     # --data_cache_dir /mnt/extra/tmp
