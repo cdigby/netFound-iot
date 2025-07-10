@@ -102,6 +102,10 @@ class FineTuningDataTrainingArguments(CommonDataTrainingArguments):
         default=None,
         metadata={"help": "Use a finetuned base netfound for the feature extractor rather than the generic base."},
     )
+    layers_to_unfreeze: int = field(
+        default=0,
+        metadata={"help": "Number of layers to unfreeze when training netfound base."},
+    )
 
 
 def regression_metrics(p: EvalPrediction):
@@ -252,8 +256,6 @@ def main():
     sum_weights = sum(log_weights)
     normalized_weights = [w * (len(class_counts) / sum_weights) for w in log_weights]
     class_weights_tensor = torch.tensor(normalized_weights, dtype=torch.float)
-
-    model.set_class_weights(class_weights_tensor)
     
     # verify_checkpoint(logger, training_args)
       
@@ -278,11 +280,9 @@ def main():
         model = freeze(NetfoundFinetuningModel.from_pretrained(
             model_args.model_name_or_path, config=config
         ), model_args)
-        summary(model)
 
-        # Unfreeze last 6 hidden layers
-        layers_to_unfreeze = 6
-        for layer in model.base_transformer.encoder.layer[-layers_to_unfreeze:]:
+        # Unfreeze last n hidden layers
+        for layer in model.base_transformer.encoder.layer[-data_args.layers_to_unfreeze:]:
             for param in layer.parameters():
                 param.requires_grad = True
 
@@ -292,8 +292,10 @@ def main():
         for param in model.base_transformer.encoder.flow_positions.parameters():
             param.requires_grad = True
         
-        logger.warning(f"Unfroze last {layers_to_unfreeze} hidden layers and final positional embeddings")
+        logger.warning(f"Unfroze last {data_args.layers_to_unfreeze} hidden layers and final positional embeddings")
         summary(model)
+
+        model.set_class_weights(class_weights_tensor)
 
         trainer = NetfoundTrainer(
             model=model,
