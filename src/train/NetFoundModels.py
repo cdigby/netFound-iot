@@ -27,6 +27,8 @@ from transformers.utils import ModelOutput
 import copy
 from dataclasses import dataclass
 
+from FocalLoss import FocalLoss
+
 logger = get_logger(__name__)
 
 TORCH_IGNORE_INDEX = -100
@@ -856,6 +858,12 @@ class NetfoundFinetuningModel(NetFoundPretrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
+        self.class_weights = None
+
+    def set_class_weights(self, class_weights):
+        self.class_weights = class_weights
+        logger.warning(f"Using class weights: {self.class_weights}")
+
     def poolingByAttention(self, sequence_output, max_burst_length):
         burstReps = sequence_output[:, ::max_burst_length, :].clone()
         return self.attentivePooling(burstReps)
@@ -875,7 +883,7 @@ class NetfoundFinetuningModel(NetFoundPretrainedModel):
         pkt_count=None,
         protocol=None,
         stats=None,
-        flow_duration = None
+        flow_duration = None,
     ):
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
@@ -932,7 +940,14 @@ class NetfoundFinetuningModel(NetFoundPretrainedModel):
                 else:
                     loss = loss_fct(logits, labels)
             elif self.config.problem_type == "single_label_classification":
-                loss_fct = CrossEntropyLoss()
+                loss_fct = CrossEntropyLoss(weight=self.class_weights)
+                loss_fct = FocalLoss(
+                    gamma=2,
+                    alpha=self.class_weights,
+                    reduction="mean",
+                    task_type="multi-class",
+                    num_classes=self.num_labels
+                )
                 loss = loss_fct(logits.view(-1, self.num_labels), labels)
 
         if not return_dict:

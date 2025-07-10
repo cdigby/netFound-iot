@@ -43,7 +43,7 @@ python \
     --do_rf_eval \
     --eval_strategy epoch \
     --save_strategy epoch \
-    --learning_rate 5e-1 \
+    --learning_rate 1e-5 \
     --num_train_epochs 1 \
     --problem_type single_label_classification \
     --num_labels 8 \
@@ -53,9 +53,7 @@ python \
     --validation_split_percentage 20 \
     --bf16 \
     --dataloader_num_workers 8 \
-    --per_device_eval_batch_size 40 \
-    --per_device_train_batch_size 40 \
-    --n_estimators 100
-    # --per_device_train_batch_size 32 \
-    # --data_cache_dir /mnt/extra/tmp
+    --per_device_eval_batch_size 4 \
+    --per_device_train_batch_size 4 \
+    --gradient_accumulation_steps 10
 

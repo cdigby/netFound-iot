@@ -10,6 +10,7 @@ import numpy as np
 import utils
 import random
 import sys
+import math
 from dataclasses import field, dataclass
 from datasets.distributed import split_dataset_by_node
 from typing import Optional
@@ -44,6 +45,7 @@ from utils import ModelArguments, CommonDataTrainingArguments, freeze, verify_ch
 
 import joblib
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.utils.class_weight import compute_class_weight
 
 random.seed(42)
 logger = get_logger(name=__name__)
@@ -229,6 +231,30 @@ def main():
     else:
         compute_metrics = lambda p: classif_metrics(p, data_args.num_labels)
 
+    # Compute class weights
+    # train_labels = train_dataset["labels"]
+    # class_weights = compute_class_weight(
+    #     class_weight="balanced",
+    #     classes=np.unique(train_labels),
+    #     y=train_labels
+    # )
+    # class_weights_tensor = torch.tensor(class_weights, dtype=torch.float).to(training_args.device)
+
+    # Log smoothed weights
+    train_labels = train_dataset["labels"]
+    class_counts = np.bincount(train_labels)
+    
+    smoothing_factor = 1.0  # This is a hyperparameter you can tune
+    log_weights = [1.0 / math.log(smoothing_factor + count) for count in class_counts]
+
+    # Normalize the weights so they aren't astronomically large
+    # This helps with training stability
+    sum_weights = sum(log_weights)
+    normalized_weights = [w * (len(class_counts) / sum_weights) for w in log_weights]
+    class_weights_tensor = torch.tensor(normalized_weights, dtype=torch.float)
+
+    model.set_class_weights(class_weights_tensor)
+    
     # verify_checkpoint(logger, training_args)
       
     # utils.start_gpu_logging(training_args.output_dir)
@@ -252,6 +278,21 @@ def main():
         model = freeze(NetfoundFinetuningModel.from_pretrained(
             model_args.model_name_or_path, config=config
         ), model_args)
+        summary(model)
+
+        # Unfreeze last 6 hidden layers
+        layers_to_unfreeze = 6
+        for layer in model.base_transformer.encoder.layer[-layers_to_unfreeze:]:
+            for param in layer.parameters():
+                param.requires_grad = True
+
+        # Unfreeze final embeddings
+        for param in model.base_transformer.encoder.burst_positions.parameters():
+            param.requires_grad = True
+        for param in model.base_transformer.encoder.flow_positions.parameters():
+            param.requires_grad = True
+        
+        logger.warning(f"Unfroze last {layers_to_unfreeze} hidden layers and final positional embeddings")
         summary(model)
 
         trainer = NetfoundTrainer(
