@@ -32,9 +32,9 @@ python \
     src/train/NetfoundFinetuning.py \
     --train_dir /mnt/extra/processed/iot2023/iot2023-8class-http \
     --model_name_or_path /mnt/extra/models/netFound-640M-base \
-    --finetuned_base_dir /mnt/extra/models/iot2023-rf-ft-base-12layer \
-    --hr_dir /mnt/extra/models/iot2023-hr-ft-base-12layer \
-    --output_dir /mnt/extra/models/iot2023-rf-ft-base-12layer \
+    --finetuned_base_dir /mnt/extra/models/iot2023-8class-unfreeze-lsw \
+    --hr_dir /mnt/extra/models/iot2023-hr-ft-base \
+    --output_dir /mnt/extra/models/iot2023-rf-ft-base \
     --report_to tensorboard \
     --overwrite_output_dir \
     --save_safetensors false \
@@ -57,6 +57,6 @@ python \
     --per_device_eval_batch_size 4 \
     --per_device_train_batch_size 4 \
     --gradient_accumulation_steps 10 \
-    --layers_to_unfreeze 12 \
+    --layers_to_unfreeze 6 \
     --n_estimators 100
 
