@@ -45,6 +45,7 @@ from utils import ModelArguments, CommonDataTrainingArguments, freeze, verify_ch
 
 import joblib
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
 from sklearn.utils.class_weight import compute_class_weight
 
 random.seed(42)
@@ -89,6 +90,10 @@ class FineTuningDataTrainingArguments(CommonDataTrainingArguments):
     do_rf_eval: bool = field(
         default=False,
         metadata={"help": "Whether to do random forest eval."},
+    )
+    do_grid_search: bool = field(
+        default=False,
+        metadata={"help": "Do grid search for RF hyperparameters."},
     )
     hr_dir: Optional[str] = field(
         default=None,
@@ -245,29 +250,35 @@ def main():
     # class_weights_tensor = torch.tensor(class_weights, dtype=torch.float).to(training_args.device)
 
     # Log smoothed weights
-    train_labels = train_dataset["labels"]
-    class_counts = np.bincount(train_labels)
-    
-    smoothing_factor = 1.0  # This is a hyperparameter you can tune
-    log_weights = [1.0 / math.log(smoothing_factor + count) for count in class_counts]
+    if data_args.do_feature_extraction or data_args.do_train_feature_extractor:
+        train_labels = train_dataset["labels"]
+        class_counts = np.bincount(train_labels)
+        
+        smoothing_factor = 1.0  # This is a hyperparameter you can tune
+        log_weights = [1.0 / math.log(smoothing_factor + count) for count in class_counts]
 
-    # Normalize the weights so they aren't astronomically large
-    # This helps with training stability
-    sum_weights = sum(log_weights)
-    normalized_weights = [w * (len(class_counts) / sum_weights) for w in log_weights]
-    class_weights_tensor = torch.tensor(normalized_weights, dtype=torch.float)
+        # Normalize the weights so they aren't astronomically large
+        # This helps with training stability
+        sum_weights = sum(log_weights)
+        normalized_weights = [w * (len(class_counts) / sum_weights) for w in log_weights]
+        class_weights_tensor = torch.tensor(normalized_weights, dtype=torch.float)
     
     # verify_checkpoint(logger, training_args)
       
     # utils.start_gpu_logging(training_args.output_dir)
     # utils.start_cpu_logging(training_args.output_dir)
 
-    rf_classifier = RandomForestClassifier(
-        n_estimators=data_args.n_estimators,
-        random_state=42,
-        n_jobs=-1,
-        verbose=1
-    )
+    if not data_args.do_grid_search:
+        # These parameters were tuned by grid search method
+        rf_classifier = RandomForestClassifier(
+            n_estimators=1000,
+            max_depth=None,
+            min_samples_leaf=1,
+            min_samples_split=2,
+            random_state=42,
+            n_jobs=-1,
+            verbose=1
+        )
 
     if data_args.do_train_feature_extractor:
         logger.warning("*** 1 train netfound feature extractor using default netfound finetuning model ***")
@@ -394,9 +405,64 @@ def main():
         del features
         del labels
 
+    if data_args.do_grid_search:
+        logger.warning("*** 4 RF classifier hyperparameter grid search ***")
+        features_path = os.path.join(data_args.hr_dir, "train_features.joblib")
+        labels_path = os.path.join(data_args.hr_dir, "train_labels.joblib")
+
+        if not os.path.exists(features_path):
+            logger.warning(f"{features_path} does not exist")
+        
+        if not os.path.exists(labels_path):
+            logger.warning(f"{labels_path} does not exist")
+
+        if not os.path.exists(training_args.output_dir):
+            os.mkdir(training_args.output_dir)
+
+        rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
+        if os.path.exists(rf_classifier_path):
+            logger.warning(f"{rf_classifier_path} already exists - abort as to not overwrite")
+            sys.exit()
+
+        logger.warning(f"Loading features from {features_path}")
+        features = joblib.load(features_path).detach().cpu().numpy()
+
+        logger.warning(f"Loading labels from {labels_path}")
+        labels = joblib.load(labels_path).detach().cpu().numpy()
+
+        logger.warning("Start search")
+
+        rf = RandomForestClassifier(
+            random_state=42,
+            n_jobs=-1,
+            verbose=1
+        )
+
+        param_grid = {
+            'n_estimators': [100, 500, 1000],
+            'max_depth': [20, 30, None],
+            'min_samples_leaf': [1, 2, 4],
+            'min_samples_split': [2, 5]
+        }
+
+        grid_search = GridSearchCV(
+            estimator=rf,
+            param_grid=param_grid,
+            scoring='f1_macro',
+            verbose=4
+        )
+        grid_search.fit(features, labels)
+
+        print(f"Best parameters found: {grid_search.best_params_}")
+
+        joblib.dump(grid_search.best_estimator_, rf_classifier_path)
+        logger.warning(f"Best classifer saved to {rf_classifier_path}")
+
+        del features
+        del labels
 
     if data_args.do_rf_eval:
-        logger.warning("*** 4 Evaluate ***")
+        logger.warning("*** 5 Evaluate ***")
 
         # Load the trained Random Forest classifier
         rf_classifier_path = os.path.join(training_args.output_dir, "rf_classifier.joblib")
@@ -433,7 +499,6 @@ def main():
 
         del features
         del labels
-        
 
 if __name__ == "__main__":
     main()

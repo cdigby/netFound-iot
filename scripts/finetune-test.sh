@@ -34,7 +34,7 @@ python \
     --model_name_or_path /mnt/extra/models/netFound-640M-base \
     --finetuned_base_dir /mnt/extra/models/iot2023-8class-unfreeze-lsw \
     --hr_dir /mnt/extra/models/iot2023-hr-ft-base \
-    --output_dir /mnt/extra/models/iot2023-rf-ft-base \
+    --output_dir /mnt/extra/models/iot2023-6layer-rf \
     --report_to tensorboard \
     --overwrite_output_dir \
     --save_safetensors false \
@@ -58,5 +58,4 @@ python \
     --per_device_train_batch_size 4 \
     --gradient_accumulation_steps 10 \
     --layers_to_unfreeze 6 \
-    --n_estimators 100
 
