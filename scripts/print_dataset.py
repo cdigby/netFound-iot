@@ -36,3 +36,7 @@ logger.info(f"Available columns: {df.columns.tolist()}")
 
 #Print number of rows
 logger.info(f"Number of rows: {len(df)}")
+
+# Print class distributions
+logger.info("Class distributions:")
+logger.info(df["labels"].value_counts())

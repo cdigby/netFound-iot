@@ -41,13 +41,12 @@ from NetfoundConfig import NetfoundConfig, NetFoundTCPOptionsConfig, NetFoundLar
 from NetfoundTokenizer import NetFoundTokenizer
 from utils import ModelArguments, CommonDataTrainingArguments, freeze, verify_checkpoint, \
     load_train_test_datasets, load_full_dataset, get_90_percent_cpu_count, get_logger, init_tbwriter, update_deepspeed_config, \
-    LearningRateLogCallback, adaptive_oversample
+    LearningRateLogCallback
 
 import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.utils.class_weight import compute_class_weight
-from datasets import Dataset
 
 random.seed(42)
 logger = get_logger(name=__name__)
@@ -175,16 +174,6 @@ def main():
             train_dataset = split_dataset_by_node(train_dataset, rank=int(os.environ["RANK"]), world_size=int(os.environ["WORLD_SIZE"]))
             test_dataset = split_dataset_by_node(test_dataset, rank=int(os.environ["RANK"]), world_size=int(os.environ["WORLD_SIZE"]))
 
-    augmented_df = adaptive_oversample(
-        train_dataset.to_pandas(),
-        ["4", "5", "7"],
-    )
-
-    train_dataset = Dataset.from_pandas(augmented_df)
-    print(f"Final dataset has {len(augmented_df)} samples.")
-    print("Final class distribution (should be balanced):")
-    print(augmented_df['labels'].value_counts().sort_index())
-    
     config = NetFoundTCPOptionsConfig if data_args.tcpoptions else NetfoundConfig
     config = config(
         num_hidden_layers=model_args.num_hidden_layers,
