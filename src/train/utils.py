@@ -19,6 +19,12 @@ from transformers import TrainerCallback
 from transformers.trainer_utils import get_last_checkpoint
 from datasets import load_dataset
 
+import pandas as pd
+import numpy as np
+from sklearn.neighbors import NearestNeighbors
+import random
+from tqdm import tqdm
+
 LOGGING_LEVEL = logging.WARNING
 TB_WRITER: Optional[SummaryWriter] = None
 
@@ -240,6 +246,131 @@ def load_train_test_datasets(logger, data_args):
     test_dataset = test_dataset.add_column("total_bursts", total_bursts_test)
 
     return train_dataset, test_dataset
+
+def create_scalar_features(df):
+    """
+    Creates a temporary, flat numerical feature set from the original DataFrame.
+    This is used ONLY for calculating distances to find neighbors.
+    """
+    print("Creating scalar features")
+    scalar_df = pd.DataFrame()
+    
+    # Add scalar features directly
+    scalar_df['flow_duration'] = df['flow_duration']
+    scalar_df['protocol'] = df['protocol']
+
+    # Calculate the ratio of outgoing (True) bursts
+    scalar_df['directions_outgoing_ratio'] = df['directions'].apply(
+        lambda x: np.mean(x) if len(x) > 0 else 0.5
+    )
+
+    # Calculate statistical features of lists
+    list_features = ['bytes', 'iats', 'counts']
+    for col in tqdm(list_features):
+        scalar_df[f'{col}_mean'] = df[col].apply(lambda x: np.mean(x) if len(x) > 0 else 0)
+        scalar_df[f'{col}_std'] = df[col].apply(lambda x: np.std(x) if len(x) > 1 else 0)
+        scalar_df[f'{col}_sum'] = df[col].apply(np.sum)
+        scalar_df[f'{col}_min'] = df[col].apply(lambda x: np.min(x) if len(x) > 0 else 0)
+        scalar_df[f'{col}_max'] = df[col].apply(lambda x: np.max(x) if len(x) > 0 else 0)
+        scalar_df[f'{col}_q25'] = df[col].apply(lambda x: np.quantile(x, 0.25) if len(x) > 0 else 0)
+        scalar_df[f'{col}_q50'] = df[col].apply(lambda x: np.quantile(x, 0.5) if len(x) > 0 else 0)
+        scalar_df[f'{col}_q75'] = df[col].apply(lambda x: np.quantile(x, 0.75) if len(x) > 0 else 0)
+
+    scalar_df['num_bursts'] = df['directions'].apply(len)
+
+    print("Created scalar features")
+    return scalar_df
+
+def adaptive_oversample(df, target_classes, k_neighbors=20):
+    """
+    Augments the dataset by adaptively duplicating the "hardest" minority samples.
+    Inspired by ADASYN
+    
+    Args:
+        df (pd.DataFrame): The original dataframe.
+        target_classes (list): A list of class labels (as strings) to augment.
+        k_neighbors (int): Number of neighbors to consider when assessing difficulty.
+    """
+    print("--- Starting Adaptive Weighted Over-sampling ---")
+    
+    # Create the temporary scalar feature set for finding neighbors
+    scalar_features = create_scalar_features(df)
+    
+    # Fit a NearestNeighbors model on the entire dataset's scalar features
+    nn_model = NearestNeighbors(n_neighbors=k_neighbors + 1, algorithm='auto').fit(scalar_features)
+    
+    new_samples = []
+    
+    # Determine the target number of samples for minority classes (usually the majority class count)
+    try:
+        majority_class_count = df['labels'].value_counts().max()
+    except ValueError: # Happens if dataframe is empty
+        return df
+
+    samples_to_add = []
+    
+    for target_class in target_classes:
+        class_df = df[df['labels'] == target_class]
+        
+        if len(class_df) == 0:
+            print(f"No samples found for class '{target_class}'. Skipping.")
+            continue
+            
+        class_indices = class_df.index
+        
+        # --- Calculate difficulty scores LOCALLY for this class ---
+        difficulty_scores = []
+        print(f"Calculating difficulty scores for {len(class_indices)} samples in class '{target_class}'...")
+        for index in class_indices:
+            minority_label = df.loc[index, 'labels']
+            
+            # Find the k nearest neighbors in the full dataset
+            neighbor_indices = nn_model.kneighbors(scalar_features.loc[[index]], return_distance=False)
+            
+            # Get the labels of these neighbors
+            neighbor_labels = df.loc[neighbor_indices[0], 'labels']
+            
+            # Calculate the ratio of neighbors from OTHER classes
+            num_different_class = sum(1 for label in neighbor_labels if label != minority_label)
+            difficulty = num_different_class / k_neighbors
+            difficulty_scores.append(difficulty)
+
+        # --- Perform weighted duplication based on local weights ---
+        # num_to_generate = majority_class_count - len(class_df)
+        num_to_generate = 10000
+        if num_to_generate <= 0:
+            print(f"Class '{target_class}' is already balanced. Skipping.")
+            continue
+
+        # Normalize the difficulty scores to create a probability distribution for this class
+        total_difficulty = sum(difficulty_scores)
+        if total_difficulty == 0:
+            print(f"All samples in class '{target_class}' are 'easy'. Using uniform duplication.")
+            class_weights = None # Fallback to uniform probability
+        else:
+            class_weights = [score / total_difficulty for score in difficulty_scores]
+
+        print(f"Generating {num_to_generate} new samples for class '{target_class}'...")
+        # Select which samples to duplicate based on the calculated weights.
+        # The lengths of `class_indices` and `class_weights` are now guaranteed to match.
+        duplicated_indices = random.choices(
+            class_indices.tolist(), 
+            weights=class_weights, 
+            k=num_to_generate
+        )
+        
+        samples_to_add.extend(df.loc[duplicated_indices].to_dict('records'))
+
+    # Combine the original dataframe with the new samples
+    if not samples_to_add:
+        print("No new samples were generated.")
+        return df
+
+    augmented_df = pd.concat([df, pd.DataFrame(samples_to_add)], ignore_index=True)
+    
+    print("Augmentation complete.")
+    print("-" * 30 + "\n")
+    return augmented_df
 
 
 def load_full_dataset(logger, data_args):

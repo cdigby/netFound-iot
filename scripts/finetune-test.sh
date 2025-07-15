@@ -32,9 +32,9 @@ python \
     src/train/NetfoundFinetuning.py \
     --train_dir /mnt/extra/processed/iot2023/iot2023-8class-http \
     --model_name_or_path /mnt/extra/models/netFound-640M-base \
-    --finetuned_base_dir /mnt/extra/models/iot2023-8class-unfreeze-lsw \
-    --hr_dir /mnt/extra/models/iot2023-hr-ft-base \
-    --output_dir /mnt/extra/models/iot2023-6layer-rf \
+    --finetuned_base_dir /mnt/extra/models/iot2023-6layer-rf-augment \
+    --hr_dir /mnt/extra/models/iot2023-hr-6layer-augment \
+    --output_dir /mnt/extra/models/iot2023-6layer-rf-augment \
     --report_to tensorboard \
     --overwrite_output_dir \
     --save_safetensors false \
