@@ -390,10 +390,15 @@ def main():
             sys.exit()
 
         logger.warning(f"Loading features from {features_path}")
-        features = joblib.load(features_path).detach().cpu().numpy()
+        features = joblib.load(features_path)
 
         logger.warning(f"Loading labels from {labels_path}")
-        labels = joblib.load(labels_path).detach().cpu().numpy()
+        labels = joblib.load(labels_path)
+
+        if isinstance(features, torch.Tensor):
+            features = features.detach().cpu().numpy()
+        if isinstance(labels, torch.Tensor):
+            labels = labels.detach().cpu().numpy()
 
         logger.warning("Start training")
 
@@ -425,10 +430,15 @@ def main():
             sys.exit()
 
         logger.warning(f"Loading features from {features_path}")
-        features = joblib.load(features_path).detach().cpu().numpy()
+        features = joblib.load(features_path)
 
         logger.warning(f"Loading labels from {labels_path}")
-        labels = joblib.load(labels_path).detach().cpu().numpy()
+        labels = joblib.load(labels_path)
+
+        if isinstance(features, torch.Tensor):
+            features = features.detach().cpu().numpy()
+        if isinstance(labels, torch.Tensor):
+            labels = labels.detach().cpu().numpy()
 
         logger.warning("Start search")
 
@@ -480,10 +490,15 @@ def main():
             logger.warning(f"{labels_path} does not exist")
 
         logger.warning(f"Loading features from {features_path}")
-        features = joblib.load(features_path).detach().cpu().numpy()
+        features = joblib.load(features_path)
 
         logger.warning(f"Loading labels from {labels_path}")
-        labels = joblib.load(labels_path).detach().cpu().numpy()
+        labels = joblib.load(labels_path)
+
+        if isinstance(features, torch.Tensor):
+            features = features.detach().cpu().numpy()
+        if isinstance(labels, torch.Tensor):
+            labels = labels.detach().cpu().numpy()
  
         logger.warning(f"Loading trained RF classifier from {rf_classifier_path}")
         rf_classifier = joblib.load(rf_classifier_path)
