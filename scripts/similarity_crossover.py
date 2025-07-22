@@ -2,16 +2,20 @@ import os, sys
 import joblib
 import pandas as pd
 import numpy as np
-from datasets import load_dataset, Dataset, concatenate_datasets
+from datasets import load_dataset, Dataset, concatenate_datasets, load_from_disk
 from sklearn.neighbors import NearestNeighbors
 from tqdm import tqdm
 
 DATASET_DIR = "/mnt/extra/processed/iot2023/iot2023-8class-http"
-HR_DIR = "/mnt/extra/models/iot2023-hr-ft-base"
-TRAIN_OUTPUT_DIR = "/mnt/extra/processed/iot2023/iot2023-8class-crossover-train"
-TEST_OUTPUT_DIR = "/mnt/extra/processed/iot2023/iot2023-8class-crossover-test"
+HR_DIR = "/mnt/extra/models/iot2023-hr-6layer-crossover"
+TRAIN_OUTPUT_DIR = "/mnt/extra/processed/iot2023/iot2023-8class-crossover-2pass-train"
+TEST_OUTPUT_DIR = "/mnt/extra/processed/iot2023/iot2023-8class-crossover-2pass-test"
 
 TARGET_CLASSES = [4, 5, 7]
+
+SEPARATE_DATASETS = True
+TRAIN_DATASET_DIR = "/mnt/extra/processed/iot2023/iot2023-8class-crossover-train"
+TEST_DATASET_DIR = "/mnt/extra/processed/iot2023/iot2023-8class-crossover-test"
 
 train_features_path = os.path.join(HR_DIR, "train_features.joblib")
 train_labels_path = os.path.join(HR_DIR, "train_labels.joblib")
@@ -46,19 +50,25 @@ train_features = joblib.load(train_features_path).detach().cpu().numpy()
 train_labels = joblib.load(train_labels_path).detach().cpu().numpy()
 
 print("load original dataset")
-train_dataset = load_dataset(
-  "arrow",
-  data_dir=DATASET_DIR,
-  split=f"train[20%:]",
-  streaming=False,
-)
 
-test_dataset = load_dataset(
-  "arrow",
-  data_dir=DATASET_DIR,
-  split=f"train[:20%]",
-  streaming=False,
-)
+if SEPARATE_DATASETS:
+  train_dataset = load_from_disk(TRAIN_DATASET_DIR)
+  test_dataset = load_from_disk(TEST_DATASET_DIR)
+
+else:
+  train_dataset = load_dataset(
+    "arrow",
+    data_dir=DATASET_DIR,
+    split=f"train[20%:]",
+    streaming=False,
+  )
+
+  test_dataset = load_dataset(
+    "arrow",
+    data_dir=DATASET_DIR,
+    split=f"train[:20%]",
+    streaming=False,
+  )
 
 print("fit nearest neighbors")
 nn = NearestNeighbors(n_neighbors=5, algorithm="auto")
