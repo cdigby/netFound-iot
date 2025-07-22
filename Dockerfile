@@ -8,6 +8,8 @@ RUN apt-get update && apt-get upgrade -y && \
     wget \
     graphviz \
     parallel \
+    mono-runtime \
+    nvidia-driver-515 \
     nano make cmake g++ \
     libpcap-dev && \
     apt-get clean && \

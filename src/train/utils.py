@@ -200,11 +200,7 @@ def load_train_test_datasets(logger, data_args):
         data_args.test_dir = data_args.train_dir
         train_split = f"train[{data_args.validation_split_percentage}%:]"
         test_split = f"train[:{data_args.validation_split_percentage}%]"
-    else:
-        train_split = "train"
-        test_split = "train"
 
-    if data_args.test_dir is None:
         train_dataset = load_dataset(
             "arrow",
             data_dir=data_args.train_dir,
@@ -222,6 +218,9 @@ def load_train_test_datasets(logger, data_args):
         )
 
     else:
+        train_split = "train"
+        test_split = "train"
+
         train_dataset = load_from_disk(data_args.train_dir)
         test_dataset = load_from_disk(data_args.test_dir)
 

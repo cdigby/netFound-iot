@@ -111,6 +111,14 @@ class FineTuningDataTrainingArguments(CommonDataTrainingArguments):
         default=0,
         metadata={"help": "Number of layers to unfreeze when training netfound base."},
     )
+    do_ensemble: bool = field(
+        default=False,
+        metadata={"help": "Whether to evaluate using an ensemble of the base and the random forest model."},
+    )
+    ensemble_rf_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Directory with pretrained random forest for ensemble."},
+    )
 
 
 def regression_metrics(p: EvalPrediction):
@@ -514,6 +522,80 @@ def main():
 
         del features
         del labels
+
+    if data_args.do_ensemble:
+        logger.warning("*** 6 Ensemble ***")
+
+        logger.warning(f"Using weights from {data_args.finetuned_base_dir}")
+        model = freeze(NetfoundFinetuningModel.from_pretrained(
+            data_args.finetuned_base_dir, config=config
+        ), model_args)
+
+        summary(model)
+
+        model.set_class_weights(class_weights_tensor)
+
+        training_args.eval_strategy = "no"
+        training_args.save_strategy = "no"
+        trainer = NetfoundTrainer(
+            model=model,
+            extraFields=additionalFields,
+            args=training_args,
+            tokenizer=testingTokenizer,
+            compute_metrics=compute_metrics,
+            callbacks=[EarlyStoppingCallback(early_stopping_patience=6)],
+            data_collator=data_collator,
+        )
+        init_tbwriter(training_args.output_dir)
+        trainer.add_callback(LearningRateLogCallback(utils.TB_WRITER))
+
+         # Load the trained Random Forest classifier
+        rf_classifier_path = os.path.join(data_args.ensemble_rf_dir, "rf_classifier.joblib")
+        if not os.path.exists(rf_classifier_path):
+            logger.warning(f"{rf_classifier_path} does not exist")
+
+        # Load features and labels
+        features_path = os.path.join(data_args.hr_dir, "test_features.joblib")
+        labels_path = os.path.join(data_args.hr_dir, "test_labels.joblib")
+
+        if not os.path.exists(features_path):
+            logger.warning(f"{features_path} does not exist")
+        
+        if not os.path.exists(labels_path):
+            logger.warning(f"{labels_path} does not exist")
+
+        logger.warning(f"Loading features from {features_path}")
+        features = joblib.load(features_path)
+
+        logger.warning(f"Loading labels from {labels_path}")
+        labels = joblib.load(labels_path)
+
+        if isinstance(features, torch.Tensor):
+            features = features.detach().cpu().numpy()
+        if isinstance(labels, torch.Tensor):
+            labels = labels.detach().cpu().numpy()
+ 
+        logger.warning(f"Loading trained RF classifier from {rf_classifier_path}")
+        rf_classifier = joblib.load(rf_classifier_path)
+
+        logger.warning("Get predictions from finetuned base model")
+        output = trainer.predict(test_dataset=test_dataset)
+        base_predictions = output.predictions
+
+        # Save these predictions because they take ages to compute, then we can try different weightings later
+        base_predictions_path = os.path.join(training_args.output_dir, "base_predictions.joblib")
+        joblib.dump(base_predictions, base_predictions_path)
+
+        logger.warning("Get predictions from RF hybrid model")
+        rf_predictions = rf_classifier.predict_proba(features)
+
+        # Weighted average of predictions
+        final_predictions = (base_predictions * 0.25) + (rf_predictions * 0.75)
+        p = EvalPrediction(
+            predictions=final_predictions,
+            label_ids=labels
+        )
+        classif_metrics(p, data_args.num_labels)
 
 if __name__ == "__main__":
     main()
