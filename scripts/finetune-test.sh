@@ -30,14 +30,16 @@ python \
     src/train/NetfoundFinetuning.py \
     --train_dir /mnt/extra/processed/iot2023/iot2023-8class-http \
     --model_name_or_path /mnt/extra/models/netFound-640M-base \
-    --finetuned_base_dir /mnt/extra/models/iot2023-12layer \
-    --ensemble_rf_dir /mnt/extra/models/iot2023-6layer-rf \
-    --hr_dir /mnt/extra/models/iot2023-hr-ft-base \
-    --output_dir /mnt/extra/models/iot2023-ensemble-12-layer-and-rf \
+    --finetuned_base_dir /mnt/extra/models/iot2023-unfreeze-all \
+    --hr_dir /mnt/extra/models/iot2023-hr-unfreeze-all \
+    --output_dir /mnt/extra/models/iot2023-unfreeze-all \
     --report_to tensorboard \
     --overwrite_output_dir \
     --save_safetensors false \
-    --do_ensemble \
+    --do_train_feature_extractor \
+    --do_feature_extraction \
+    --do_rf_train \
+    --do_rf_eval \
     --eval_strategy epoch \
     --save_strategy epoch \
     --learning_rate 1e-5 \
@@ -46,11 +48,10 @@ python \
     --num_labels 8 \
     --load_best_model_at_end \
     --netfound_large True \
-    --freeze_base True \
+    --freeze_base False \
     --validation_split_percentage 20 \
     --bf16 \
     --dataloader_num_workers 8 \
-    --per_device_eval_batch_size 4 \
-    --per_device_train_batch_size 4 \
-    --gradient_accumulation_steps 10 \
-    --layers_to_unfreeze 12 \
+    --per_device_eval_batch_size 1 \
+    --per_device_train_batch_size 1 \
+    --gradient_accumulation_steps 40 \
