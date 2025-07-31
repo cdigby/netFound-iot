@@ -119,6 +119,10 @@ class FineTuningDataTrainingArguments(CommonDataTrainingArguments):
         default=None,
         metadata={"help": "Directory with pretrained random forest for ensemble."},
     )
+    unpoisoned_data_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "If this directory is specified, will do train/test split for this dir and for train_dir. Use train set from train_dir and test set from this dir."},
+    )
 
 
 def regression_metrics(p: EvalPrediction):

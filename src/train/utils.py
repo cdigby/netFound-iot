@@ -196,7 +196,30 @@ def get_90_percent_cpu_count():
 
 def load_train_test_datasets(logger, data_args):
     logger.warning("Loading datasets")
-    if data_args.test_dir is None:
+
+    if data_args.unpoisoned_data_dir:
+        train_split = f"train[{data_args.validation_split_percentage}%:]"
+        test_split = f"train[:{data_args.validation_split_percentage}%]"
+
+        logger.warning(f"Loading poisoned train data from {data_args.train_dir}")
+        train_dataset = load_dataset(
+            "arrow",
+            data_dir=data_args.train_dir,
+            split=train_split,
+            cache_dir=data_args.data_cache_dir,
+            streaming=data_args.streaming,
+        )
+
+        logger.warning(f"Loading unpoisoned test data from {data_args.unpoisoned_data_dir}")
+        test_dataset = load_dataset(
+            "arrow",
+            data_dir=data_args.unpoisoned_data_dir,
+            split=test_split,
+            cache_dir=data_args.data_cache_dir,
+            streaming=data_args.streaming,
+        )
+
+    elif data_args.test_dir is None:
         data_args.test_dir = data_args.train_dir
         train_split = f"train[{data_args.validation_split_percentage}%:]"
         test_split = f"train[:{data_args.validation_split_percentage}%]"
