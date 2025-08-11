@@ -273,7 +273,7 @@ def main():
         # This helps with training stability
         sum_weights = sum(log_weights)
         normalized_weights = [w * (len(class_counts) / sum_weights) for w in log_weights]
-        class_weights_tensor = torch.tensor(normalized_weights, dtype=torch.float)
+        class_weights_tensor = torch.tensor(normalized_weights, dtype=torch.float).to(training_args.device)
     
     # verify_checkpoint(logger, training_args)
       
