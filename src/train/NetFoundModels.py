@@ -940,7 +940,7 @@ class NetfoundFinetuningModel(NetFoundPretrainedModel):
                 else:
                     loss = loss_fct(logits, labels)
             elif self.config.problem_type == "single_label_classification":
-                loss_fct = CrossEntropyLoss(weight=self.class_weights)
+                # loss_fct = CrossEntropyLoss(weight=self.class_weights)
                 loss_fct = FocalLoss(
                     gamma=2,
                     alpha=self.class_weights,
